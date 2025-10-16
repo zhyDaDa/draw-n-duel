@@ -1,11 +1,11 @@
-import CardDisplay from './CardDisplay'
-import type { PlayerState } from '../game/types'
+import CardDisplay from "./CardDisplay";
+import type { PlayerState } from "../game/types";
 
 interface PlayerHUDProps {
-  player: PlayerState
-  isCurrent: boolean
-  isHuman: boolean
-  onUnpackBackpack?: (index: number) => void
+  player: PlayerState;
+  isCurrent: boolean;
+  isHuman: boolean;
+  onUnpackBackpack?: (index: number) => void;
 }
 
 export const PlayerHUD: React.FC<PlayerHUDProps> = ({
@@ -14,14 +14,12 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
   isHuman,
   onUnpackBackpack,
 }) => {
-  const holdSlots = player.holdSlots ?? []
-  const topHoldCard = holdSlots[0]
-  const shouldRenderHold = !isHuman
+  const playerBuffs = player.buffs ?? [];
 
   return (
-    <section className={`player-hud ${isCurrent ? 'player-hud--active' : ''}`}>
+    <section className={`player-hud ${isCurrent ? "player-hud--active" : ""}`}>
       <header className="player-hud__header">
-        <h2>{player.label === 'Player' ? '玩家' : 'AI 对手'}</h2>
+        <h2>{player.label === "Player" ? "玩家" : "AI 对手"}</h2>
         {isCurrent && <span className="player-hud__badge">当前回合</span>}
       </header>
       <div className="player-hud__stats">
@@ -34,14 +32,6 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
           <span>{player.wins}</span>
         </div>
         <div>
-          <strong>胜利碎片：</strong>
-          <span>{player.victoryShards}</span>
-        </div>
-        <div>
-          <strong>护盾：</strong>
-          <span>{player.shields}</span>
-        </div>
-        <div>
           <strong>已抽牌：</strong>
           <span>
             {player.drawsUsed} / {player.maxDraws + player.extraDraws}
@@ -49,16 +39,20 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
         </div>
       </div>
 
-      {shouldRenderHold && (
-        <div className="player-hud__hold">
-          <h3>滞留位</h3>
-          {topHoldCard ? (
-            <CardDisplay card={topHoldCard} highlight footer={<span>AI 可在合适时机使用</span>} />
-          ) : (
-            <p className="player-hud__placeholder">暂无卡牌</p>
-          )}
-        </div>
-      )}
+      <div className="player-hud__buff">
+        {/* <h3>滞留位</h3> */}
+        {playerBuffs && playerBuffs.length > 0 ? (
+          playerBuffs.map((buff) => (
+            <CardDisplay
+              key={buff.id}
+              card={buff}
+              footer={<span>AI 可在合适时机使用</span>}
+            />
+          ))
+        ) : (
+          <p className="player-hud__placeholder">No Buff</p>
+        )}
+      </div>
 
       {player.backpack.length > 0 && (
         <div className="player-hud__backpack">
@@ -89,7 +83,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
         </div>
       )}
     </section>
-  )
-}
+  );
+};
 
-export default PlayerHUD
+export default PlayerHUD;

@@ -76,6 +76,7 @@ export interface PlayerState {
   merchantTokens: number
   logPrefix: string
   pendingEffects: PendingEffect[]
+  buffs: PlayerBuff[]
 }
 
 export type GamePhase =
@@ -102,6 +103,13 @@ export interface MerchantOffer {
 export type PendingEffect =
   | { type: 'nextDrawPenalty'; value: number }
   | { type: 'startScorePenalty'; value: number }
+
+export interface PlayerBuff {
+  id: string
+  name: string
+  description: string
+  effect: CardEffect
+}
 
 export interface LevelConfig {
   level: number
