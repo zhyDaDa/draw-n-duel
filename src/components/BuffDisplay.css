@@ -1,0 +1,128 @@
+
+.buff-display {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+  border: 2px solid rgba(99, 102, 241, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  /* 无阴影 */
+}
+
+.buff-display:hover {
+  transform: translateY(-2px);
+  /* 无阴影 */
+}
+
+.buff-display__icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.15));
+}
+
+.buff-display__count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.35);
+}
+
+.buff-display--temp {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+}
+
+.buff-display__badge {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 16px 16px;
+  border-color: transparent transparent #fbbf24 transparent;
+  border-bottom-right-radius: 8px;
+}
+
+.buff-tooltip {
+  max-width: 280px;
+}
+
+.buff-tooltip header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.buff-tooltip header strong {
+  font-size: 0.95rem;
+  color: #1f2937;
+}
+
+.buff-tooltip__temp {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.2);
+  color: #d97706;
+  font-weight: 600;
+}
+
+.buff-tooltip p {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.buff-tooltip footer {
+  font-size: 0.75rem;
+  color: #6b7280;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(229, 231, 235, 0.8);
+}
+
+.buff-list {
+  display: flex;
+  gap: 0.65rem;
+  overflow-x: auto;
+  padding: 0.5rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
+}
+
+.buff-list::-webkit-scrollbar {
+  height: 6px;
+}
+
+.buff-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.buff-list::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 3px;
+}
+
+.buff-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+}

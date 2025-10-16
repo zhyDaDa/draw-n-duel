@@ -9,6 +9,7 @@ import {
   createInitialState,
   discardActiveCard,
   drawCard,
+  executeAiTurnAsync,
   finishPlayerTurn,
   playActiveCard,
   releaseHoldCard,
@@ -37,6 +38,20 @@ const App: React.FC = () => {
   const [animationEvent, setAnimationEvent] =
     useState<CardLaneAnimationEvent | null>(null);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isAiExecuting, setIsAiExecuting] = useState(false);
+
+  // 监听 AI 回合并逐步推进
+  useEffect(() => {
+    if (gameState.phase === "aiTurn" && !isAiExecuting) {
+      setIsAiExecuting(true);
+      executeAiTurnAsync(gameState, (step) => {
+        setGameState(step);
+      }).then((nextState) => {
+        setGameState(nextState);
+        setIsAiExecuting(false);
+      });
+    }
+  }, [gameState.phase, isAiExecuting]);
 
   const handleOutcome = (
     outcome: EngineOutcome<ActionResult | ResolveResult>
@@ -198,12 +213,20 @@ const App: React.FC = () => {
     ]
   );
 
+  const drawsRemaining =
+    gameState.player.maxDraws +
+    gameState.player.extraDraws -
+    gameState.player.drawsUsed;
+  const drawButtonLabel = `抽卡 [${gameState.player.drawsUsed}/${
+    gameState.player.maxDraws + gameState.player.extraDraws
+  }]`;
+
   const actionButtons = [
     {
       key: "draw",
-      label: "抽卡",
+      label: drawButtonLabel,
       onClick: handleDraw,
-      disabled: drawDisabled,
+      disabled: drawDisabled || drawsRemaining <= 0,
       tooltip: "从牌堆抽取一张卡牌，若已有待处理卡则不可抽。",
     },
     {

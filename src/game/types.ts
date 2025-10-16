@@ -108,7 +108,10 @@ export interface PlayerBuff {
   id: string
   name: string
   description: string
+  icon: string
   effect: CardEffect
+  isPermanent: boolean
+  count: number
 }
 
 export interface LevelConfig {

@@ -116,12 +116,27 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
 }
 
-.player-hud__hold,
+.player-hud__buffs {
+  margin-bottom: 0.75rem;
+}
+
+.player-hud__buffs h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.5rem;
+  color: #4b5563;
+}
+
 .player-hud__backpack {
-  /* margin-bottom: 1rem; */
+  margin-bottom: 0.75rem;
+}
+
+.player-hud__backpack h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.5rem;
+  color: #4b5563;
 }
 
 .player-hud__placeholder {
@@ -485,7 +500,7 @@
 
 .btn--glow {
   position: relative;
-  animation: btn-glow 2s ease-in-out infinite;
+  animation: btn-glow 1.2s ease-in-out infinite;
 }
 
 .btn--pulse {
@@ -497,7 +512,7 @@
     box-shadow: 0 0 0 rgba(99, 102, 241, 0);
   }
   50% {
-    box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.15);
+    box-shadow: 0 0 0 8px rgba(99, 102, 241, 0.25);
   }
   100% {
     box-shadow: 0 0 0 rgba(99, 102, 241, 0);
