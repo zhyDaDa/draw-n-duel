@@ -5,12 +5,15 @@ import {
   BASE_MATCH_CONFIG,
   DEFAULT_MAX_DRAWS,
   PLAYER_LABEL,
+  MAX_HOLD_SLOTS,
   type ActionResult,
   type CardInstance,
   type EngineOutcome,
   type GameState,
   type LevelConfig,
+  type MerchantCost,
   type MerchantOffer,
+  type Rarity,
   type PlayerState,
   type ResolveResult,
 } from './types'
@@ -32,8 +35,10 @@ const createSeededRng = (seed: number) => {
 
 const clonePlayer = (player: PlayerState): PlayerState => ({
   ...player,
+  holdSlots: player.holdSlots.map((card) => ({ ...card })),
   passTokens: player.passTokens.map((token) => ({ ...token })),
   backpack: player.backpack.map((card) => ({ ...card })),
+  pendingEffects: player.pendingEffects.map((effect) => ({ ...effect })),
 })
 
 const cloneState = (state: GameState): GameState => ({
@@ -47,11 +52,97 @@ const cloneState = (state: GameState): GameState => ({
   },
   merchantOffers: state.merchantOffers.map((offer) => ({
     card: { ...offer.card },
-    costType: offer.costType,
-    costValue: offer.costValue,
+    cost: { ...offer.cost },
   })),
   log: [...state.log],
 })
+
+const addCardToHold = (player: PlayerState, card: CardInstance): void => {
+  player.holdSlots.unshift(card)
+  if (player.holdSlots.length > MAX_HOLD_SLOTS) {
+    player.holdSlots.length = MAX_HOLD_SLOTS
+  }
+}
+
+const removeTopHoldCard = (player: PlayerState): CardInstance | undefined => player.holdSlots.shift()
+
+const hasHoldCapacity = (player: PlayerState): boolean => player.holdSlots.length < MAX_HOLD_SLOTS
+
+type MerchantCostTemplate = Pick<MerchantCost, 'type' | 'value' | 'description' | 'severity'>
+
+const MERCHANT_COST_POOL: Record<Rarity, MerchantCostTemplate[]> = {
+  common: [
+    { type: 'scorePenalty', value: 6, description: '立即失去 6 分', severity: 'mild' },
+    { type: 'nextDrawPenalty', value: 1, description: '下一层基础抽牌次数 -1', severity: 'mild' },
+  ],
+  uncommon: [
+    { type: 'scorePenalty', value: 9, description: '立即失去 9 分', severity: 'moderate' },
+    { type: 'nextDrawPenalty', value: 1, description: '下一层基础抽牌次数 -1，并额外感到疲劳', severity: 'moderate' },
+    { type: 'startScorePenalty', value: 4, description: '下一层开局时额外扣除 4 分', severity: 'moderate' },
+  ],
+  rare: [
+    { type: 'scorePenalty', value: 12, description: '立即失去 12 分', severity: 'severe' },
+    { type: 'nextDrawPenalty', value: 2, description: '下一层基础抽牌次数 -2', severity: 'severe' },
+    { type: 'startScorePenalty', value: 8, description: '下一层开局时额外扣除 8 分', severity: 'severe' },
+  ],
+  legendary: [
+    { type: 'scorePenalty', value: 18, description: '立即失去 18 分', severity: 'severe' },
+    { type: 'nextDrawPenalty', value: 2, description: '下一层基础抽牌次数 -2，并使行动迟缓', severity: 'severe' },
+    { type: 'startScorePenalty', value: 12, description: '下一层开局时额外扣除 12 分', severity: 'severe' },
+  ],
+}
+
+const pickMerchantCost = (rarity: Rarity, rng: () => number): MerchantCost => {
+  const pool = MERCHANT_COST_POOL[rarity] ?? MERCHANT_COST_POOL.common
+  const template = pool[Math.floor(rng() * pool.length)] ?? MERCHANT_COST_POOL.common[0]
+  return { ...template }
+}
+
+const applyMerchantCost = (player: PlayerState, cost: MerchantCost): string => {
+  switch (cost.type) {
+    case 'scorePenalty': {
+      player.score = Math.max(0, player.score - cost.value)
+      return `${player.logPrefix} 支付代价：${cost.description}`
+    }
+    case 'nextDrawPenalty': {
+      player.pendingEffects.push({ type: 'nextDrawPenalty', value: cost.value })
+      return `${player.logPrefix} 接受代价：${cost.description}`
+    }
+    case 'startScorePenalty': {
+      player.pendingEffects.push({ type: 'startScorePenalty', value: cost.value })
+      return `${player.logPrefix} 接受代价：${cost.description}`
+    }
+    default:
+      return `${player.logPrefix} 接受代价：${cost.description}`
+  }
+}
+
+const applyPendingLevelEffects = (state: GameState, player: PlayerState): void => {
+  if (player.pendingEffects.length === 0) return
+  let drawPenalty = 0
+  let startPenalty = 0
+
+  player.pendingEffects.forEach((effect) => {
+    if (effect.type === 'nextDrawPenalty') {
+      drawPenalty += effect.value
+    }
+    if (effect.type === 'startScorePenalty') {
+      startPenalty += effect.value
+    }
+  })
+
+  if (drawPenalty > 0) {
+    player.maxDraws = Math.max(1, player.maxDraws - drawPenalty)
+    appendLog(state, `${player.logPrefix} 的抽牌上限因代价减少 ${drawPenalty}`)
+  }
+
+  if (startPenalty > 0) {
+    player.score = Math.max(0, player.score - startPenalty)
+    appendLog(state, `${player.logPrefix} 的起始分数因代价降低 ${startPenalty}`)
+  }
+
+  player.pendingEffects = []
+}
 
 const appendLog = (state: GameState, message: string): void => {
   state.log.push(message)
@@ -102,7 +193,7 @@ export const createInitialState = (seed?: number): GameState => {
       drawsUsed: 0,
       maxDraws: levelConfig.baseMaxDraws,
       extraDraws: 0,
-      holdSlot: undefined,
+      holdSlots: [],
       backpack: [],
       victoryShards: 0,
       wins: 0,
@@ -110,6 +201,7 @@ export const createInitialState = (seed?: number): GameState => {
       shields: 0,
       merchantTokens: 0,
       logPrefix: '玩家',
+      pendingEffects: [],
     },
     ai: {
       label: AI_LABEL,
@@ -117,7 +209,7 @@ export const createInitialState = (seed?: number): GameState => {
       drawsUsed: 0,
       maxDraws: levelConfig.baseMaxDraws,
       extraDraws: 0,
-      holdSlot: undefined,
+      holdSlots: [],
       backpack: [],
       victoryShards: 0,
       wins: 0,
@@ -125,6 +217,7 @@ export const createInitialState = (seed?: number): GameState => {
       shields: 0,
       merchantTokens: 0,
       logPrefix: 'AI',
+      pendingEffects: [],
     },
     activeCard: undefined,
     merchantOffers: [],
@@ -201,7 +294,7 @@ const applyCardTo = (
     case 'transfer': {
       const value = card.effect.value ?? 0
       const feedback = applyNegativeWithShield(opponent, () => {
-        opponent.score = Math.max(1, opponent.score - value)
+        opponent.score = Math.max(0, opponent.score - value)
       })
       if (feedback) {
         messages.push(feedback)
@@ -213,7 +306,7 @@ const applyCardTo = (
     case 'steal': {
       const value = card.effect.value ?? 0
       const feedback = applyNegativeWithShield(opponent, () => {
-        opponent.score = Math.max(1, opponent.score - value)
+        opponent.score = Math.max(0, opponent.score - value)
         actor.score += value
       })
       if (feedback) {
@@ -242,9 +335,10 @@ const applyCardTo = (
       break
     }
     case 'duplicate': {
-      if (actor.holdSlot) {
-        const clone = cloneCardInstance(actor.holdSlot)
-        messages.push(`${actor.logPrefix} 复制滞留卡 ${actor.holdSlot.name}`)
+      if (actor.holdSlots.length > 0) {
+        const top = actor.holdSlots[0]
+        const clone = cloneCardInstance(top)
+        messages.push(`${actor.logPrefix} 复制滞留卡 ${top.name}`)
         const childMessages = applyCardTo(state, actor, opponent, clone)
         messages.push(...childMessages)
       } else {
@@ -370,17 +464,17 @@ export const stashActiveCard = (sourceState: GameState): EngineOutcome<ActionRes
       message: '没有可滞留的卡牌。',
     }
   }
-  if (sourceState.player.holdSlot) {
+  if (!hasHoldCapacity(sourceState.player)) {
     return {
       type: 'invalidPhase',
-      message: '滞留位已被占用。',
+      message: '滞留位已满。',
     }
   }
 
   const state = cloneState(sourceState)
   const activeCard = state.activeCard!
-  state.player.holdSlot = activeCard
-  appendLog(state, `玩家将 ${activeCard.name} 放入滞留位。`)
+  addCardToHold(state.player, activeCard)
+  appendLog(state, `玩家将 ${activeCard.name} 放入滞留位顶部。`)
   state.activeCard = undefined
 
   return {
@@ -414,7 +508,7 @@ export const discardActiveCard = (sourceState: GameState): EngineOutcome<ActionR
 export const releaseHoldCard = (sourceState: GameState): EngineOutcome<ActionResult> => {
   const validation = ensurePhase(sourceState, 'playerTurn')
   if (validation) return validation
-  if (!sourceState.player.holdSlot) {
+  if (sourceState.player.holdSlots.length === 0) {
     return {
       type: 'noHoldCard',
       message: '滞留位为空。',
@@ -428,8 +522,7 @@ export const releaseHoldCard = (sourceState: GameState): EngineOutcome<ActionRes
   }
 
   const state = cloneState(sourceState)
-  const holdCard = state.player.holdSlot!
-  state.player.holdSlot = undefined
+  const holdCard = removeTopHoldCard(state.player)!
   const messages = applyCardTo(state, state.player, state.ai, holdCard)
   addCardToDiscard(state, holdCard)
   messages.forEach((message) => appendLog(state, message))
@@ -502,6 +595,8 @@ const prepareNextLevel = (state: GameState): void => {
   const levelConfig = getLevelConfig(state.level)
   resetPlayerForLevel(state.player, levelConfig)
   resetPlayerForLevel(state.ai, levelConfig)
+  applyPendingLevelEffects(state, state.player)
+  applyPendingLevelEffects(state, state.ai)
 
   state.activeCard = undefined
   appendLog(state, `进入层级 ${state.level} —— ${levelConfig.name}`)
@@ -529,9 +624,9 @@ const simulateAiTurn = (state: GameState): void => {
     appendLog(state, `AI 抽到了 ${card.name}`)
 
     const decision = decideAiAction(card, ai, player)
-    if (decision === 'hold' && !ai.holdSlot) {
-      ai.holdSlot = card
-      appendLog(state, 'AI 将卡牌置入滞留位。')
+    if (decision === 'hold' && hasHoldCapacity(ai)) {
+      addCardToHold(ai, card)
+      appendLog(state, 'AI 将卡牌置入滞留位顶部。')
       continue
     }
     const messages = applyCardTo(state, ai, player, card)
@@ -539,12 +634,13 @@ const simulateAiTurn = (state: GameState): void => {
     messages.forEach((message) => appendLog(state, message))
   }
 
-  if (ai.holdSlot && ai.score < player.score) {
-    const holdCard = ai.holdSlot
-    ai.holdSlot = undefined
+  if (ai.holdSlots.length > 0 && ai.score < player.score) {
+    const holdCard = removeTopHoldCard(ai)
+    if (holdCard) {
     const messages = applyCardTo(state, ai, player, holdCard)
     addCardToDiscard(state, holdCard)
     messages.forEach((message) => appendLog(state, message))
+    }
   }
 
   state.rngSeed = rng.getSeed()
@@ -558,7 +654,7 @@ const decideAiAction = (card: CardInstance, ai: PlayerState, player: PlayerState
     case 'extraDraw':
       return 'play'
     case 'multiply':
-      if (ai.holdSlot) return 'play'
+      if (ai.holdSlots.length > 0) return 'play'
       if (ai.score < player.score) return 'play'
       return 'hold'
     case 'add':
@@ -569,7 +665,7 @@ const decideAiAction = (card: CardInstance, ai: PlayerState, player: PlayerState
     case 'steal':
       return 'play'
     case 'duplicate':
-      return ai.holdSlot ? 'play' : 'hold'
+      return ai.holdSlots.length > 0 ? 'play' : 'hold'
     case 'wildcard':
       return ai.score < player.score ? 'play' : 'hold'
     default:
@@ -620,10 +716,10 @@ const prepareMerchant = (state: GameState): void => {
   for (let i = 0; i < offerCount; i += 1) {
     const def = pool[Math.floor(rng.next() * pool.length)]
     if (!def) continue
+    const card = createWeightedCard(def, () => rng.next())
     offers.push({
-      card: createWeightedCard(def, () => rng.next()),
-      costType: 'score',
-      costValue: 10,
+      card,
+      cost: pickMerchantCost(card.rarity, () => rng.next()),
     })
   }
   state.merchantOffers = offers
@@ -663,23 +759,18 @@ export const acceptMerchantOffer = (sourceState: GameState, index: number): Engi
     }
   }
 
-  if (chosen.costType === 'score') {
-    if (state.player.score <= chosen.costValue) {
-      return {
-        type: 'merchantUnavailable',
-        message: '分数不足以购买该卡。',
-      }
-    }
-    state.player.score -= chosen.costValue
-  }
-
-  if (!state.player.holdSlot) {
-    state.player.holdSlot = chosen.card
+  const canPlaceInHold = hasHoldCapacity(state.player)
+  const placement = canPlaceInHold ? '滞留位顶部' : '背包'
+  if (canPlaceInHold) {
+    addCardToHold(state.player, chosen.card)
   } else {
     state.player.backpack.push(chosen.card)
   }
 
-  appendLog(state, `玩家购入 ${chosen.card.name}，放入${state.player.holdSlot === chosen.card ? '滞留位' : '背包'}。`)
+  const costMessage = applyMerchantCost(state.player, chosen.cost)
+
+  appendLog(state, `玩家购入 ${chosen.card.name}，放入${placement}。`)
+  appendLog(state, costMessage)
   state.merchantOffers = []
   proceedFromMerchant(state)
   return state
@@ -699,10 +790,10 @@ export const unpackBackpack = (sourceState: GameState, index: number): EngineOut
       message: '只有在玩家回合才能使用背包。',
     }
   }
-  if (sourceState.player.holdSlot) {
+  if (!hasHoldCapacity(sourceState.player)) {
     return {
       type: 'invalidPhase',
-      message: '请先清空滞留位，再从背包取卡。',
+      message: '滞留位已满，无法从背包取卡。',
     }
   }
   const card = sourceState.player.backpack[index]
@@ -715,7 +806,7 @@ export const unpackBackpack = (sourceState: GameState, index: number): EngineOut
 
   const state = cloneState(sourceState)
   const [picked] = state.player.backpack.splice(index, 1)
-  state.player.holdSlot = picked
-  appendLog(state, `从背包取出 ${picked.name} 放入滞留位。`)
+  addCardToHold(state.player, picked)
+  appendLog(state, `从背包取出 ${picked.name} 放入滞留位顶部。`)
   return state
 }

@@ -32,6 +32,7 @@ export interface CardDefinition {
   id: string
   name: string
   description: string
+  keywords?: string[]
   rarity: Rarity
   levelRange: [number, number]
   baseWeight: number
@@ -45,6 +46,7 @@ export interface CardInstance {
   definitionId: string
   name: string
   description: string
+  keywords: string[]
   rarity: Rarity
   effect: CardEffect
   tags: string[]
@@ -65,7 +67,7 @@ export interface PlayerState {
   drawsUsed: number
   maxDraws: number
   extraDraws: number
-  holdSlot?: CardInstance
+  holdSlots: CardInstance[]
   backpack: CardInstance[]
   victoryShards: number
   wins: number
@@ -73,6 +75,7 @@ export interface PlayerState {
   shields: number
   merchantTokens: number
   logPrefix: string
+  pendingEffects: PendingEffect[]
 }
 
 export type GamePhase =
@@ -82,11 +85,23 @@ export type GamePhase =
   | 'merchant'
   | 'matchEnd'
 
+export type MerchantCostType = 'scorePenalty' | 'nextDrawPenalty' | 'startScorePenalty'
+
+export interface MerchantCost {
+  type: MerchantCostType
+  value: number
+  description: string
+  severity: 'mild' | 'moderate' | 'severe'
+}
+
 export interface MerchantOffer {
   card: CardInstance
-  costType: 'score' | 'card'
-  costValue: number
+  cost: MerchantCost
 }
+
+export type PendingEffect =
+  | { type: 'nextDrawPenalty'; value: number }
+  | { type: 'startScorePenalty'; value: number }
 
 export interface LevelConfig {
   level: number
@@ -161,3 +176,5 @@ export const DEFAULT_MAX_DRAWS = 3
 
 export const PLAYER_LABEL: PlayerState['label'] = 'Player'
 export const AI_LABEL: PlayerState['label'] = 'AI'
+
+export const MAX_HOLD_SLOTS = 2

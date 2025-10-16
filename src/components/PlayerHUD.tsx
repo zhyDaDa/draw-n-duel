@@ -5,7 +5,6 @@ interface PlayerHUDProps {
   player: PlayerState
   isCurrent: boolean
   isHuman: boolean
-  onReleaseHold?: () => void
   onUnpackBackpack?: (index: number) => void
 }
 
@@ -13,10 +12,11 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
   player,
   isCurrent,
   isHuman,
-  onReleaseHold,
   onUnpackBackpack,
 }) => {
-  const holdCard = player.holdSlot
+  const holdSlots = player.holdSlots ?? []
+  const topHoldCard = holdSlots[0]
+  const shouldRenderHold = !isHuman
 
   return (
     <section className={`player-hud ${isCurrent ? 'player-hud--active' : ''}`}>
@@ -49,26 +49,16 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
         </div>
       </div>
 
-      <div className="player-hud__hold">
-        <h3>滞留位</h3>
-        {holdCard ? (
-          <CardDisplay
-            card={holdCard}
-            highlight
-            footer={
-              isHuman ? (
-                <button type="button" onClick={onReleaseHold} className="btn btn--small">
-                  释放滞留卡
-                </button>
-              ) : (
-                <span>AI 可在合适时机使用</span>
-              )
-            }
-          />
-        ) : (
-          <p className="player-hud__placeholder">暂无卡牌</p>
-        )}
-      </div>
+      {shouldRenderHold && (
+        <div className="player-hud__hold">
+          <h3>滞留位</h3>
+          {topHoldCard ? (
+            <CardDisplay card={topHoldCard} highlight footer={<span>AI 可在合适时机使用</span>} />
+          ) : (
+            <p className="player-hud__placeholder">暂无卡牌</p>
+          )}
+        </div>
+      )}
 
       {player.backpack.length > 0 && (
         <div className="player-hud__backpack">
@@ -84,7 +74,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
                         type="button"
                         className="btn btn--small"
                         onClick={() => onUnpackBackpack?.(index)}
-                        disabled={Boolean(player.holdSlot)}
+                        disabled={player.holdSlots.length >= 2}
                       >
                         放入滞留位
                       </button>
