@@ -1,5 +1,5 @@
 import CardDisplay from "./CardDisplay";
-import BuffDisplay from "./BuffDisplay";
+import AnimatedBuffList from "./AnimatedBuffList";
 import type { PlayerState, PlayerBuff } from "../game/types";
 import "../components/BuffDisplay.css";
 
@@ -133,15 +133,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       </div>
 
       <div className="player-hud__buffs">
-        {buffs.length > 0 ? (
-          <div className="buff-list">
-            {buffs.map((buff) => (
-              <BuffDisplay key={buff.id} buff={buff} />
-            ))}
-          </div>
-        ) : (
-          <p className="player-hud__placeholder">No Buff</p>
-        )}
+        <AnimatedBuffList buffs={buffs} minRows={1} />
       </div>
 
       {player.backpack.length > 0 && (

@@ -303,8 +303,14 @@ export const ensurePhase = (
   }
   return undefined;
 };
-export const setLevelPhase = (state: GameState, phase: GameState["phase"]): void => {
-  console.log(`%c主动更改阶段: ${state.phase} -> ${phase}`, "border: 2px solid #0000aa; padding-left: 4px; border-radius: 4px;");
+export const setLevelPhase = (
+  state: GameState,
+  phase: GameState["phase"]
+): void => {
+  console.log(
+    `%c主动更改阶段: ${state.phase} -> ${phase}`,
+    "border: 2px solid #0000aa; padding-left: 4px; border-radius: 4px;"
+  );
   state.phase = phase;
 };
 export const createInitialState = (
@@ -394,7 +400,7 @@ export function nextSubPhase(state: GameState): void {
     }
     case "stashingCard":
     case "playingCard":
-    case "discardingCard": 
+    case "discardingCard":
     case "awaitAction": {
       // 前端在此阶段选择 play/stash/discard；当没有 activeCard 时结束回合
       state.subPhase = "turnEnd";
@@ -405,7 +411,7 @@ export function nextSubPhase(state: GameState): void {
       // 在回合结束时判断是否整轮结束
       if (allPlayersCannotDraw(state)) {
         appendLog(state, "所有玩家抽牌机会已用尽，进入本轮结算。");
-        state.phase = "finishRound"; // 进入 Level Phase 的结算
+        setLevelPhase(state, "finishRound"); // 进入 Level Phase 的结算
         break; // 留给 nextLevelPhase/finishLevel 推进
       }
       state.subPhase = "nextPlayerTurnStart";
@@ -908,7 +914,7 @@ const applyLevelEnd = (state: GameState): void => {
 const prepareNextLevel = (state: GameState): void => {
   state.level += 1;
   if (state.level > state.config.totalLevels) {
-    state.phase = "matchEnd";
+    setLevelPhase(state, "matchEnd");
     return;
   }
 
@@ -927,7 +933,7 @@ const prepareNextLevel = (state: GameState): void => {
   setCurrentPlayerByLabel(state, PLAYER_LABEL);
   appendLog(state, `进入层级 ${state.level} —— ${levelConfig.name}`);
   // 进入层起始阶段，等待推进到对战
-  state.phase = "levelStart";
+  setLevelPhase(state, "levelStart");
 };
 
 /**
@@ -990,34 +996,6 @@ export function getAiTurnSteps(sourceState: GameState): GameState[] {
   state.rngSeed = rng.getSeed();
   return steps;
 }
-
-// 异步执行 AI 回合，带有随机延时（100-500ms）
-export const executeAiTurnAsync = async (
-  sourceState: GameState,
-  onStep?: (state: GameState) => void
-): Promise<GameState> => {
-  if (sourceState.phase !== "playerTurn") {
-    return sourceState;
-  }
-
-  const steps = getAiTurnSteps(sourceState);
-  let lastState = sourceState;
-  for (const step of steps) {
-    const delay = 100 + Math.random() * 400;
-    await new Promise((resolve) => setTimeout(resolve, delay));
-    if (onStep) onStep(step);
-    lastState = step;
-  }
-
-  // AI只执行一回合，结束后切换到下一个玩家
-  let state = finishPlayerTurn(lastState);
-  // 如果所有玩家都不能再抽卡，交给 level phase 推进
-  if (allPlayersCannotDraw(state)) {
-    state.phase = "finishRound";
-    return state;
-  }
-  return state;
-};
 
 const decideAiAction = (
   card: CardInstance,
@@ -1162,7 +1140,7 @@ export const acceptMerchantOffer = (
 const proceedFromMerchant = (state: GameState): void => {
   prepareNextLevel(state);
   if (state.level > state.config.totalLevels) {
-    state.phase = "matchEnd";
+    setLevelPhase(state, "matchEnd");
     return;
   }
   // 进入下一层的 levelStart，等待外部驱动到 playerTurn
@@ -1175,20 +1153,20 @@ export function nextLevelPhase(state: GameState): void {
       // 开始对战：进入玩家回合流程
       setCurrentPlayerByLabel(state, PLAYER_LABEL);
       state.subPhase = "turnStart";
-      state.phase = "playerTurn";
+      setLevelPhase(state, "playerTurn");
       break;
     }
     case "finishRound": {
       // 进入层结算动画阶段
       applyLevelEnd(state);
       if (state.winner) {
-        state.phase = "matchEnd";
+        setLevelPhase(state, "matchEnd");
         const winnerDisplay =
           state.winner === PLAYER_LABEL ? "玩家" : state.winner;
         appendLog(state, `比赛结束，${winnerDisplay} 获胜！`);
         break;
       }
-      state.phase = "finishLevel";
+      setLevelPhase(state, "finishLevel");
       break;
     }
     case "finishLevel": {
@@ -1196,7 +1174,7 @@ export function nextLevelPhase(state: GameState): void {
       const transition = nextLevelOrMerchantPhase(state.level);
       if (transition === "merchant" && state.level < state.config.totalLevels) {
         prepareMerchant(state);
-        state.phase = "merchant";
+        setLevelPhase(state, "merchant");
         break;
       }
       prepareNextLevel(state); // 将 phase 置为 levelStart

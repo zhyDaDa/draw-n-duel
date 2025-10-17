@@ -4,6 +4,9 @@ import CardLane, { type CardLaneAnimationEvent } from "./components/CardLane";
 import MerchantModal from "./components/MerchantModal";
 import PlayerHUD from "./components/PlayerHUD";
 import TurnLog from "./components/TurnLog";
+import { getLevelConfig } from "./game/levels";
+import LevelResultModal from "./components/LevelResultModal.tsx";
+import PhaseIntroModal from "./components/PhaseIntroModal.tsx";
 import {
   acceptMerchantOffer,
   createInitialState,
@@ -42,69 +45,183 @@ const App: React.FC = () => {
     useState<CardLaneAnimationEvent | null>(null);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoAI, setAutoAI] = useState(false);
+  const aiRunningRef = useRef(false);
+  const [showLevelResult, setShowLevelResult] = useState(false);
+  const [showPhaseIntro, setShowPhaseIntro] = useState(false);
+  const phaseIntroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const levelResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 启动时将 turnStart 推进到 awaitHoldChoice
   useEffect(() => {
-    setGameState((s) => beginNextPlayerTurn(advanceLevelPhase(s)));
+    // 进入开场的 levelStart 引导动画（~1s），结束后再推进到玩家回合
+    setGameState((s) => {
+      if (s.phase === "levelStart") setShowPhaseIntro(true);
+      return s;
+    });
   }, []);
 
   // Level Phase：当处于 levelStart 时，自动进入玩家回合（playerTurn -> turnStart -> awaitHoldChoice）
   useEffect(() => {
     if (gameState.phase === "levelStart") {
-      setGameState((s) => beginNextPlayerTurn(advanceLevelPhase(s)));
+      // 展示阶段开场动画 1s，结束后推进
+      setShowPhaseIntro(true);
+      if (phaseIntroTimerRef.current) clearTimeout(phaseIntroTimerRef.current);
+      phaseIntroTimerRef.current = setTimeout(() => {
+        setShowPhaseIntro(false);
+        setGameState((s) => beginNextPlayerTurn(advanceLevelPhase(s)));
+      }, 1000);
     }
   }, [gameState.phase]);
 
   // Level Phase：当进入 finishRound 或 finishLevel，自动推进层结算与层切换
   useEffect(() => {
     if (gameState.phase === "finishRound") {
-      setGameState((s) => finishLevel(s));
+      // 推进一步到 finishLevel（进行通行证等同步结算），随后展示动画
+      setGameState((s) => advanceLevelPhase(s));
     }
   }, [gameState.phase]);
 
   useEffect(() => {
     if (gameState.phase === "finishLevel") {
-      setGameState((s) => finishLevel(s));
+      // 弹出结算动画，2~3秒后自动关闭并进入下一阶段
+      setShowLevelResult(true);
+      if (levelResultTimerRef.current) clearTimeout(levelResultTimerRef.current);
+      levelResultTimerRef.current = setTimeout(() => {
+        setShowLevelResult(false);
+        setGameState((s) => finishLevel(s));
+      }, 2400);
     }
   }, [gameState.phase]);
 
   // 简易随机 AI（开关控制）：
   useEffect(() => {
-    if (!autoAI) return;
-    if (gameState.phase !== "playerTurn") return;
-    const current = gameState.players[gameState.currentPlayerIndex];
-    if (!current?.isAI) return;
+    // 带延迟（1~1.5s）的 AI 执行器
+    const runWithDelay = async (ms: number) =>
+      await new Promise((r) => setTimeout(r, ms));
 
-    // awaitHoldChoice：优先随机释放滞留，否则抽卡
-    if (gameState.subPhase === "awaitHoldChoice") {
-      if (
-        (current.holdSlots?.length ?? 0) > 0 &&
-        Math.random() < 0.5 &&
-        !gameState.activeCard
-      ) {
-        const res = releaseHoldCard(gameState);
-        if (!isEngineError(res)) setGameState(res.state);
-        return;
-      }
-      const check = ensurePhase(gameState, "playerTurn", "awaitHoldChoice");
-      if (!check) {
-        const s1 = advanceSubPhase(gameState);
-        const res = drawCard(s1);
-        if (!isEngineError(res)) setGameState(res.state);
-      }
-      return;
-    }
+    const randomDelay = () => 1000 + Math.floor(Math.random() * 500);
 
-    // awaitAction：随机选择对 activeCard 的处理
-    if (gameState.subPhase === "awaitAction" && gameState.activeCard) {
-      const r = Math.random();
-      let res = playActiveCard(gameState);
-      if (r < 0.33) res = playActiveCard(gameState);
-      else if (r < 0.66) res = stashActiveCard(gameState);
-      else res = discardActiveCard(gameState);
-      if (!isEngineError(res)) {
-        const endState = finishPlayerTurn(res.state);
-        const started = beginNextPlayerTurn(endState);
-        setGameState(started);
+    const getDrawsRemaining = (s: GameState) => {
+      const p = s.players[s.currentPlayerIndex];
+      return p.maxDraws + p.extraDraws - p.drawsUsed;
+    };
+
+    const runAiTurn = async () => {
+      if (aiRunningRef.current) return;
+      aiRunningRef.current = true;
+      try {
+        let s = gameState;
+        // 安全检查：必须是 AI 回合
+        if (s.phase !== "playerTurn") return;
+        const me = s.players[s.currentPlayerIndex];
+        if (!me?.isAI) return;
+
+        // 若处于 nextPlayerTurnStart/turnStart，推进到 awaitHoldChoice
+        if (s.subPhase === "nextPlayerTurnStart" || s.subPhase === "turnStart" || s.subPhase === undefined) {
+          s = beginNextPlayerTurn(s);
+          setGameState(s);
+          await runWithDelay(400);
+        }
+
+        // 循环最多处理一次“抽卡+动作”，或一次“释放滞留”，不足则直接结束回合
+        const opponent = s.players[(s.currentPlayerIndex + 1) % s.players.length];
+        const ai = s.players[s.currentPlayerIndex];
+
+        // awaitHoldChoice 分支
+        if (s.subPhase === "awaitHoldChoice") {
+          // 若可释放滞留且有利（落后时），先释放
+          if ((ai.holdSlots?.length ?? 0) > 0 && ai.score < opponent.score && !s.activeCard) {
+            const res = releaseHoldCard(s);
+            if (!isEngineError(res)) {
+              s = res.state;
+              setGameState(s);
+              await runWithDelay(randomDelay());
+            }
+          }
+
+          // 抽卡尝试
+          const drawsRemaining = getDrawsRemaining(s);
+          const canDraw = drawsRemaining > 0 && s.deck.drawPile.length > 0;
+          if (canDraw && s.subPhase === "awaitHoldChoice" && !s.activeCard) {
+            const check = ensurePhase(s, "playerTurn", "awaitHoldChoice");
+            if (!check) {
+              const s1 = advanceSubPhase(s); // -> drawingCard
+              const res = drawCard(s1);
+              if (!isEngineError(res)) {
+                s = res.state;
+                setGameState(s);
+                await runWithDelay(randomDelay());
+              }
+            }
+          } else if (!s.activeCard) {
+            // BUG修复：在 awaitHoldChoice 且无法抽卡时，直接结束回合
+            const endState = finishPlayerTurn(s);
+            const started = beginNextPlayerTurn(endState);
+            setGameState(started);
+            return;
+          }
+        }
+
+        // awaitAction：对 activeCard 决策
+        if (s.phase === "playerTurn" && s.subPhase === "awaitAction" && s.activeCard) {
+          const card = s.activeCard;
+          const aiNow = s.players[s.currentPlayerIndex];
+          const oppNow = s.players[(s.currentPlayerIndex + 1) % s.players.length];
+          // 简单策略（与引擎一致）
+          const decide = () => {
+            switch (card.effect.type) {
+              case "victoryShard":
+              case "levelPass":
+              case "shield":
+              case "extraDraw":
+                return "play" as const;
+              case "multiply":
+                if ((aiNow.holdSlots?.length ?? 0) > 0) return "play" as const;
+                if (aiNow.score < oppNow.score) return "play" as const;
+                return "hold" as const;
+              case "add":
+                return "play" as const;
+              case "reset":
+                return aiNow.score < oppNow.score * 0.6 ? ("play" as const) : ("hold" as const);
+              case "transfer":
+              case "steal":
+                return "play" as const;
+              case "duplicate":
+                return (aiNow.holdSlots?.length ?? 0) > 0 ? ("play" as const) : ("hold" as const);
+              case "wildcard":
+                return aiNow.score < oppNow.score ? ("play" as const) : ("hold" as const);
+              default:
+                return "play" as const;
+            }
+          };
+          const decision = decide();
+          let res: EngineOutcome<ActionResult>;
+          if (decision === "hold" && (aiNow.holdSlots?.length ?? 0) < aiNow.MAX_HOLD_SLOTS) {
+            res = stashActiveCard(s);
+          } else if (decision === "hold") {
+            res = discardActiveCard(s); // 槽满则丢弃
+          } else {
+            res = playActiveCard(s);
+          }
+          if (!isEngineError(res)) {
+            s = res.state;
+            setGameState(s);
+            await runWithDelay(randomDelay());
+
+            // 结束回合并切到下一个
+            const endState = finishPlayerTurn(s);
+            const started = beginNextPlayerTurn(endState);
+            setGameState(started);
+          }
+        }
+      } finally {
+        aiRunningRef.current = false;
+      }
+    };
+
+    if (autoAI && gameState.phase === "playerTurn") {
+      const current = gameState.players[gameState.currentPlayerIndex];
+      if (current?.isAI) {
+        runAiTurn();
       }
     }
   }, [autoAI, gameState]);
@@ -148,6 +265,12 @@ const App: React.FC = () => {
     () => () => {
       if (animationTimerRef.current) {
         clearTimeout(animationTimerRef.current);
+      }
+      if (phaseIntroTimerRef.current) {
+        clearTimeout(phaseIntroTimerRef.current);
+      }
+      if (levelResultTimerRef.current) {
+        clearTimeout(levelResultTimerRef.current);
       }
     },
     []
@@ -264,8 +387,13 @@ const App: React.FC = () => {
 
   const handleReset = () => {
     const s = createInitialState();
-    const started = beginNextPlayerTurn(advanceLevelPhase(s));
-    setGameState(started);
+    setShowPhaseIntro(true);
+    // 先展示阶段动画，再推进
+    if (phaseIntroTimerRef.current) clearTimeout(phaseIntroTimerRef.current);
+    phaseIntroTimerRef.current = setTimeout(() => {
+      const started = beginNextPlayerTurn(advanceLevelPhase(s));
+      setGameState(started);
+    }, 1000);
     setStatusMessage("已重置对决。");
   };
 
@@ -517,6 +645,18 @@ const App: React.FC = () => {
         offers={gameState.merchantOffers}
         onAccept={handleAcceptMerchant}
         onSkip={handleSkipMerchant}
+      />
+      <LevelResultModal
+        open={showLevelResult}
+        players={gameState.players}
+        level={gameState.level}
+        onClose={() => setShowLevelResult(false)}
+      />
+      <PhaseIntroModal
+        open={showPhaseIntro}
+        level={gameState.level}
+        levelName={getLevelConfig(gameState.level).name}
+        onClose={() => setShowPhaseIntro(false)}
       />
     </div>
   );

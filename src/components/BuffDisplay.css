@@ -1,4 +1,3 @@
-
 .buff-display {
   position: relative;
   width: 48px;
@@ -12,6 +11,7 @@
   cursor: pointer;
   transition: transform 0.2s ease;
   /* 无阴影 */
+  /* overflow: hidden; */
 }
 
 .buff-display:hover {
@@ -23,26 +23,45 @@
   width: 28px;
   height: 28px;
   object-fit: contain;
-  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.15));
+  /* 移除阴影 */
 }
 
-.buff-display__count {
+.buff-display__count-corner {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-  color: #fff;
-  font-size: 0.7rem;
-  font-weight: 700;
   display: flex;
+  top: -4px;
+  right: -8px;
+  width: 1.2rem;
+  height: 1.2rem;
+  background: linear-gradient(
+    to right,
+    rgba(38, 102, 91, 0.8),
+    rgba(38, 102, 91, 0.8)
+  );
+  border-radius: 10px;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
-  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.35);
+  /* border-style: solid;
+  border-width: 0 18px 18px 0;
+  border-color: transparent #e5e7eb transparent transparent; 浅灰色三角形衬底 */
 }
+
+.buff-display__count-text {
+  position: absolute;
+  text-align: right;
+  color: #ffffff;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0 0.15rem;
+  /* 默认大小（用于 2 位或未标记项） */
+  font-size: 0.75rem;
+  transition: font-size 120ms ease, transform 120ms ease;
+  font-weight: 600;
+}
+
 
 .buff-display--temp {
   border-color: rgba(251, 191, 36, 0.45);
@@ -106,8 +125,51 @@
   gap: 0.65rem;
   overflow-x: auto;
   padding: 0.5rem 0;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
+  /* scrollbar styling for WebKit */
+}
+
+.buff-list--animated {
+  min-height: 48px; /* 一行的固定高度，避免闪动 */
+}
+.buff-list--rows-2 {
+  min-height: 106px;
+}
+.buff-list--rows-3 {
+  min-height: 164px;
+}
+
+.buff-anim {
+  display: inline-flex;
+}
+
+.buff-anim--enter {
+  animation: buff-enter 320ms ease;
+}
+
+.buff-anim--exit {
+  animation: buff-exit 260ms ease forwards;
+}
+
+@keyframes buff-enter {
+  0% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes buff-exit {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
 }
 
 .buff-list::-webkit-scrollbar {

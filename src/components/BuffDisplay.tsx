@@ -28,7 +28,9 @@ export const BuffDisplay: React.FC<BuffDisplayProps> = ({ buff }) => {
       <div className={`buff-display ${!buff.isPermanent ? "buff-display--temp" : ""}`}>
         <img src={buff.icon} alt={buff.name} className="buff-display__icon" />
         {buff.count > 1 && (
-          <span className="buff-display__count">{buff.count}</span>
+          <span className="buff-display__count-corner">
+            <span className="buff-display__count-text">{buff.count}</span>
+          </span>
         )}
         {!buff.isPermanent && <span className="buff-display__badge" />}
       </div>

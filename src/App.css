@@ -81,7 +81,7 @@
   justify-content: space-between;
   gap: 1.5rem;
   height: 100%;
-  margin: 0 0.25rem ;
+  margin: 0 0.25rem;
 }
 
 .player-hud {
@@ -121,6 +121,7 @@
 
 .player-hud__buffs {
   margin-bottom: 0.75rem;
+  min-height: 60px; /* 固定 Buff 区高度，避免从无到有的撑高跳动 */
 }
 
 .player-hud__buffs h3 {
@@ -139,14 +140,7 @@
   color: #4b5563;
 }
 
-.player-hud__placeholder {
-  margin: 0;
-  padding: 0.75rem;
-  border: 1px dashed #d1d5db;
-  border-radius: 8px;
-  text-align: center;
-  color: #6b7280;
-}
+/* 占位已移除，Buff 区通过 min-height 保持高度 */
 
 .player-hud__backpack ul {
   list-style: none;
@@ -699,11 +693,141 @@
   display: grid;
   gap: 1rem;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  justify-items: center;
 }
 
 .merchant-modal__footer {
   margin-top: 1.5rem;
   text-align: right;
+}
+
+.merchant-offer {
+  background: #f9fafb;
+  border: 1px solid #e0e7ff;
+  border-radius: 12px;
+  padding: 1.5rem;
+  /* width: 100%; */
+  box-shadow: 0 6px 15px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.merchant-offer:hover{
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
+  transition: box-shadow 0.25s ease;
+}
+
+/* 选中态：保留更强阴影、边框加粗为蓝色 */
+.merchant-offer.is-selected {
+  border: 2px solid #3b82f6; /* 蓝色加粗 */
+  box-shadow: 0 16px 28px rgba(59, 130, 246, 0.28);
+}
+
+/* 可点击的 label 外观与键盘可聚焦样式 */
+.merchant-offer {
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.merchant-offer:focus-within {
+  outline: 2px solid rgba(59, 130, 246, 0.35);
+  outline-offset: 3px;
+}
+
+/* 隐藏原生单选，只保留可访问性与键盘支持 */
+.merchant-offer__radio {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 底部按钮间距（避免内联样式） */
+.merchant-modal__footer .btn + .btn {
+  margin-left: 8px;
+}
+
+/* .merchant-offer__divider {
+  height: 1px;
+  background: #e0e7ff;
+  margin: 1rem 0;
+} */
+
+/* Level 结算动画 Modal */
+.level-result-modal .ant-modal-content {
+  border-radius: 16px;
+}
+.level-result {
+  padding: 0.5rem 0.5rem 0.25rem;
+}
+.level-result h2 {
+  margin: 0 0 0.75rem;
+}
+.level-result__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.level-result__row {
+  display: grid;
+  grid-template-columns: 140px 1fr 60px;
+  align-items: center;
+  gap: 0.75rem;
+}
+.level-result__label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.level-result__name {
+  font-weight: 700;
+}
+.level-result__rank {
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  background: #eef2ff;
+  color: #4338ca;
+}
+.level-result__rank--r1 {
+  background: #dcfce7;
+  color: #166534;
+}
+.level-result__bar .ant-progress-bg {
+  height: 12px !important;
+  border-radius: 999px;
+}
+.level-result__score {
+  font-weight: 800;
+  text-align: right;
+}
+
+/* 层开始动画 Modal */
+.phase-intro-modal .ant-modal-content {
+  border-radius: 16px;
+}
+.phase-intro {
+  text-align: center;
+  padding: 1rem 0.5rem;
+  animation: phase-pop 800ms ease;
+}
+.phase-intro h2 {
+  margin: 0;
+  font-size: 2rem;
+}
+.phase-intro__subtitle {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+}
+@keyframes phase-pop {
+  0% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .card-lane {
