@@ -952,3 +952,11 @@
     align-items: flex-start;
   }
 }
+
+/* AI toggle container */
+.ai-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}

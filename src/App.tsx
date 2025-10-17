@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Flex, Space, Tooltip } from "antd";
+import { Flex, Space, Tooltip, Switch } from "antd";
 import CardLane, { type CardLaneAnimationEvent } from "./components/CardLane";
 import MerchantModal from "./components/MerchantModal";
 import PlayerHUD from "./components/PlayerHUD";
@@ -9,13 +9,16 @@ import {
   createInitialState,
   discardActiveCard,
   drawCard,
-  executeAiTurnAsync,
   finishPlayerTurn,
+  ensurePhase,
+  advanceSubPhase,
+  beginNextPlayerTurn,
   playActiveCard,
   releaseHoldCard,
   skipMerchant,
   stashActiveCard,
   unpackBackpack,
+  discardHoldCard,
 } from "./game/engine";
 import {
   MAX_HOLD_SLOTS,
@@ -38,20 +41,45 @@ const App: React.FC = () => {
   const [animationEvent, setAnimationEvent] =
     useState<CardLaneAnimationEvent | null>(null);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [isAiExecuting, setIsAiExecuting] = useState(false);
-
-  // 监听 AI 回合并逐步推进
+  const [autoAI, setAutoAI] = useState(false);
+  // 启动时将 turnStart 推进到 awaitHoldChoice
   useEffect(() => {
-    if (gameState.phase === "aiTurn" && !isAiExecuting) {
-      setIsAiExecuting(true);
-      executeAiTurnAsync(gameState, (step) => {
-        setGameState(step);
-      }).then((nextState) => {
-        setGameState(nextState);
-        setIsAiExecuting(false);
-      });
+    setGameState((s) => beginNextPlayerTurn(s));
+  }, []);
+
+  // 简易随机 AI（开关控制）：
+  useEffect(() => {
+    if (!autoAI) return;
+    if (gameState.phase !== "playerTurn") return;
+    const current = gameState.players[gameState.currentPlayerIndex];
+    if (!current?.isAI) return;
+
+    // awaitHoldChoice：优先随机释放滞留，否则抽卡
+    if (gameState.subPhase === "awaitHoldChoice") {
+      if ((current.holdSlots?.length ?? 0) > 0 && Math.random() < 0.5 && !gameState.activeCard) {
+        const res = releaseHoldCard(gameState);
+        if (!isEngineError(res)) setGameState(res.state);
+        return;
+      }
+      const check = ensurePhase(gameState, "playerTurn", "awaitHoldChoice");
+      if (!check) {
+        const s1 = advanceSubPhase(gameState);
+        const res = drawCard(s1);
+        if (!isEngineError(res)) setGameState(res.state);
+      }
+      return;
     }
-  }, [gameState.phase, isAiExecuting]);
+
+    // awaitAction：随机选择对 activeCard 的处理
+    if (gameState.subPhase === "awaitAction" && gameState.activeCard) {
+      const r = Math.random();
+      let res = playActiveCard(gameState);
+      if (r < 0.33) res = playActiveCard(gameState);
+      else if (r < 0.66) res = stashActiveCard(gameState);
+      else res = discardActiveCard(gameState);
+      if (!isEngineError(res)) setGameState(finishPlayerTurn(res.state));
+    }
+  }, [autoAI, gameState]);
 
   const handleOutcome = (
     outcome: EngineOutcome<ActionResult | ResolveResult>
@@ -62,6 +90,13 @@ const App: React.FC = () => {
     }
     setGameState(outcome.state);
     setStatusMessage(outcome.messages?.join(" ") ?? null);
+    // 如果已到达 nextPlayerTurnStart，自动开始下一玩家回合并进入 awaitHoldChoice
+    setGameState((s) => {
+      if (s.phase === "playerTurn" && s.subPhase === "nextPlayerTurnStart") {
+        return beginNextPlayerTurn(s);
+      }
+      return s;
+    });
   };
 
   const handleGameStateUpdate = (outcome: EngineOutcome<GameState>) => {
@@ -91,7 +126,15 @@ const App: React.FC = () => {
   );
 
   const handleDraw = () => {
-    const result = drawCard(gameState);
+    // 仅允许在 awaitHoldChoice 阶段开始抽卡
+    const phaseCheck = ensurePhase(gameState, "playerTurn", "awaitHoldChoice");
+    if (phaseCheck) {
+      setStatusMessage(phaseCheck.message);
+      return;
+    }
+    const drawingState = advanceSubPhase(gameState); // awaitHoldChoice -> drawingCard
+    const result = drawCard(drawingState);
+
     if (!isEngineError(result) && result.appliedCard) {
       registerAnimation({
         type: "draw",
@@ -104,7 +147,7 @@ const App: React.FC = () => {
 
   const handlePlay = () => {
     const activeCard = gameState.activeCard;
-    const result = playActiveCard(gameState);
+  const result = playActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "play",
@@ -112,12 +155,18 @@ const App: React.FC = () => {
         timestamp: Date.now(),
       });
     }
-    handleOutcome(result);
+    // 行动完成后推进到回合结束阶段，再开始下一位
+    if (!isEngineError(result)) {
+      const endState = finishPlayerTurn(result.state);
+      handleOutcome({ ...result, state: endState });
+    } else {
+      handleOutcome(result);
+    }
   };
 
   const handleStash = () => {
     const activeCard = gameState.activeCard;
-    const result = stashActiveCard(gameState);
+  const result = stashActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "stash",
@@ -125,12 +174,17 @@ const App: React.FC = () => {
         timestamp: Date.now(),
       });
     }
-    handleOutcome(result);
+    if (!isEngineError(result)) {
+      const endState = finishPlayerTurn(result.state);
+      handleOutcome({ ...result, state: endState });
+    } else {
+      handleOutcome(result);
+    }
   };
 
   const handleDiscard = () => {
     const activeCard = gameState.activeCard;
-    const result = discardActiveCard(gameState);
+  const result = discardActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "discard",
@@ -138,12 +192,20 @@ const App: React.FC = () => {
         timestamp: Date.now(),
       });
     }
-    handleOutcome(result);
+    if (!isEngineError(result)) {
+      const endState = finishPlayerTurn(result.state);
+      handleOutcome({ ...result, state: endState });
+    } else {
+      handleOutcome(result);
+    }
   };
 
   const handleReleaseHold = () => {
-    const holdCard = gameState.player.holdSlots[0];
-    const result = releaseHoldCard(gameState);
+    const current =
+      gameState.players?.[gameState.currentPlayerIndex] ??
+      gameState.players?.[0];
+    const holdCard = current?.holdSlots?.[0];
+  const result = releaseHoldCard(gameState);
     if (!isEngineError(result) && holdCard) {
       registerAnimation({
         type: "release",
@@ -160,9 +222,10 @@ const App: React.FC = () => {
   };
 
   const handleEndTurn = () => {
-    const nextState = finishPlayerTurn(gameState);
-    setGameState(nextState);
-    setStatusMessage("进入结算阶段。");
+    const endState = finishPlayerTurn(gameState);
+    const started = beginNextPlayerTurn(endState);
+    setGameState(started);
+    setStatusMessage("回合已结束，已进入下一位的回合开始阶段。");
   };
 
   const handleSkipMerchant = () => {
@@ -182,19 +245,24 @@ const App: React.FC = () => {
   };
 
   const isPlayerTurn = gameState.phase === "playerTurn";
-  const holdSlots = gameState.player.holdSlots;
+  const currentPlayer =
+    gameState.players?.[gameState.currentPlayerIndex] ?? gameState.players?.[0];
+  const holdSlots = currentPlayer?.holdSlots ?? [];
   const activeCard = gameState.activeCard;
   const canPlay = Boolean(activeCard);
   const canStash = Boolean(activeCard) && holdSlots.length < MAX_HOLD_SLOTS;
   const canDiscard = Boolean(activeCard);
-
-  const drawDisabled = !isPlayerTurn || Boolean(activeCard);
-  const playDisabled = !isPlayerTurn || !canPlay;
-  const stashDisabled = !isPlayerTurn || !canStash;
-  const discardDisabled = !isPlayerTurn || !canDiscard;
+  const drawDisabled =
+    !isPlayerTurn || gameState.subPhase !== "awaitHoldChoice" || Boolean(activeCard);
+  const playDisabled =
+    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canPlay;
+  const stashDisabled =
+    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canStash;
+  const discardDisabled =
+    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canDiscard;
   const releaseDisabled =
-    !isPlayerTurn || holdSlots.length === 0 || Boolean(activeCard);
-  const endTurnDisabled = !isPlayerTurn || Boolean(activeCard);
+    !isPlayerTurn || gameState.subPhase !== "awaitHoldChoice" || holdSlots.length === 0 || Boolean(activeCard);
+  const endTurnDisabled = !isPlayerTurn || gameState.subPhase !== "awaitAction" || Boolean(activeCard);
   const noActionsAvailable =
     isPlayerTurn &&
     drawDisabled &&
@@ -214,50 +282,68 @@ const App: React.FC = () => {
   );
 
   const drawsRemaining =
-    gameState.player.maxDraws +
-    gameState.player.extraDraws -
-    gameState.player.drawsUsed;
-  const drawButtonLabel = `抽卡 [${gameState.player.drawsUsed}/${
-    gameState.player.maxDraws + gameState.player.extraDraws
+    (currentPlayer?.maxDraws ?? 0) +
+    (currentPlayer?.extraDraws ?? 0) -
+    (currentPlayer?.drawsUsed ?? 0);
+  const drawButtonLabel = `抽卡 [${currentPlayer?.drawsUsed ?? 0}/${
+    (currentPlayer?.maxDraws ?? 0) + (currentPlayer?.extraDraws ?? 0)
   }]`;
 
-  const actionButtons = [
-    {
-      key: "draw",
-      label: drawButtonLabel,
-      onClick: handleDraw,
-      disabled: drawDisabled || drawsRemaining <= 0,
-      tooltip: "从牌堆抽取一张卡牌，若已有待处理卡则不可抽。",
-    },
-    {
-      key: "play",
-      label: "结算卡牌",
-      onClick: handlePlay,
-      disabled: playDisabled,
-      tooltip: "立即结算这张卡牌的效果。",
-    },
-    {
-      key: "stash",
-      label: "滞留",
-      onClick: handleStash,
-      disabled: stashDisabled,
-      tooltip: "将当前卡牌移动到滞留位。",
-    },
-    {
-      key: "release",
-      label: "释放滞留",
-      onClick: handleReleaseHold,
-      disabled: releaseDisabled,
-      tooltip: "释放滞留位顶部的卡牌并立即结算。",
-    },
-    {
-      key: "discard",
-      label: "丢弃",
-      onClick: handleDiscard,
-      disabled: discardDisabled,
-      tooltip: "放弃这张卡牌并置入弃牌堆。",
-    },
-  ];
+  const actionButtons = useMemo(() => {
+    if (gameState.subPhase === "awaitHoldChoice") {
+      return [
+        {
+          key: "release",
+          label: "释放滞留",
+          onClick: handleReleaseHold,
+          disabled: releaseDisabled,
+          tooltip: "释放滞留位顶部的卡牌并立即结算。",
+        },
+        {
+          key: "discard-hold",
+          label: "丢弃滞留",
+          onClick: () => {
+            const res = discardHoldCard(gameState);
+            handleOutcome(res);
+          },
+          disabled:
+            !isPlayerTurn || (holdSlots?.length ?? 0) === 0 || Boolean(activeCard),
+          tooltip: "丢弃滞留位顶部的卡牌。",
+        },
+        {
+          key: "draw",
+          label: drawButtonLabel,
+          onClick: handleDraw,
+          disabled: drawDisabled || drawsRemaining <= 0,
+          tooltip: "从牌堆抽取一张卡牌。",
+        },
+      ];
+    }
+    // 默认：awaitAction
+    return [
+      {
+        key: "play",
+        label: "结算卡牌",
+        onClick: handlePlay,
+        disabled: playDisabled,
+        tooltip: "立即结算这张卡牌的效果。",
+      },
+      {
+        key: "stash",
+        label: "滞留",
+        onClick: handleStash,
+        disabled: stashDisabled,
+        tooltip: "将当前卡牌移动到滞留位。",
+      },
+      {
+        key: "discard",
+        label: "丢弃",
+        onClick: handleDiscard,
+        disabled: discardDisabled,
+        tooltip: "放弃这张卡牌并置入弃牌堆。",
+      },
+    ];
+  }, [gameState.subPhase, releaseDisabled, isPlayerTurn, holdSlots?.length, activeCard, drawButtonLabel, handleDraw, drawDisabled, drawsRemaining, playDisabled, handlePlay, stashDisabled, handleStash, discardDisabled, handleDiscard]);
 
   const endTurnButtonClasses = ["btn", "btn--accent"];
   if (noActionsAvailable) {
@@ -305,24 +391,25 @@ const App: React.FC = () => {
           >
             重置对决
           </button>
+          <div className="ai-toggle">
+            <span>允许 AI 自动操作</span>
+            <Switch checked={autoAI} onChange={setAutoAI} />
+          </div>
         </div>
       </header>
 
       <Flex className="layout">
         <div className="layout__left">
           <Space className="players-wrapper">
-            <PlayerHUD
-              player={gameState.player}
-              isCurrent={isPlayerTurn}
-              isHuman
-              onUnpackBackpack={handleUnpack}
-            />
-
-            <PlayerHUD
-              player={gameState.ai}
-              isCurrent={gameState.phase === "aiTurn"}
-              isHuman={false}
-            />
+            {gameState.players?.map((player, idx) => (
+              <PlayerHUD
+                key={player.label + idx}
+                player={player}
+                isCurrent={gameState.currentPlayerIndex === idx && isPlayerTurn}
+                isHuman={idx === 0}
+                onUnpackBackpack={idx === 0 ? handleUnpack : undefined}
+              />
+            ))}
           </Space>
 
           <section className="action-panel">

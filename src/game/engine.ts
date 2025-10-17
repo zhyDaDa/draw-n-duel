@@ -1,3 +1,12 @@
+/**
+ * 判断所有玩家是否都不能再抽卡
+ */
+export function allPlayersCannotDraw(state: GameState): boolean {
+  return state.players.every((player) => {
+    const allowed = maxDrawsFor(player);
+    return player.drawsUsed >= allowed || state.deck.drawPile.length === 0;
+  });
+}
 import {
   cloneCardInstance,
   createWeightedCard,
@@ -52,8 +61,7 @@ const clonePlayer = (player: PlayerState): PlayerState => ({
 
 const cloneState = (state: GameState): GameState => ({
   ...state,
-  player: clonePlayer(state.player),
-  ai: clonePlayer(state.ai),
+  players: state.players.map(clonePlayer),
   deck: {
     drawPile: [...state.deck.drawPile],
     discardPile: [...state.deck.discardPile],
@@ -78,6 +86,28 @@ const removeTopHoldCard = (player: PlayerState): CardInstance | undefined =>
 
 const hasHoldCapacity = (player: PlayerState): boolean =>
   player.holdSlots.length < MAX_HOLD_SLOTS;
+
+const setCurrentPlayerByIndex = (state: GameState, index: number): void => {
+  if (index >= 0 && index < state.players.length) {
+    state.currentPlayerIndex = index;
+  }
+};
+const setCurrentPlayerByLabel = (
+  state: GameState,
+  label: PlayerState["label"]
+): number => {
+  const idx = state.players.findIndex((p) => p.label === label);
+  if (idx >= 0) {
+    state.currentPlayerIndex = idx;
+    return idx;
+  }
+  return state.currentPlayerIndex;
+};
+const setNextPlayerAsCurrent = (state: GameState): number => {
+  state.currentPlayerIndex =
+    (state.currentPlayerIndex + 1) % state.players.length;
+  return state.currentPlayerIndex;
+};
 
 type MerchantCostTemplate = Pick<
   MerchantCost,
@@ -252,9 +282,10 @@ const consumeCard = (state: GameState): CardInstance | undefined => {
   return card;
 };
 
-const ensurePhase = (
+export const ensurePhase = (
   state: GameState,
-  expected: GameState["phase"]
+  expected: GameState["phase"],
+  expectedSubPhase?: NonNullable<GameState["subPhase"]>
 ): EngineOutcome<void> => {
   if (state.phase !== expected) {
     return {
@@ -262,63 +293,130 @@ const ensurePhase = (
       message: `当前阶段为 ${state.phase}，不能执行该操作。`,
     };
   }
+  if (expectedSubPhase && state.subPhase !== expectedSubPhase) {
+    return {
+      type: "invalidPhase",
+      message: `当前子阶段为 ${state.subPhase ?? "(none)"}，预期 ${expectedSubPhase}。`,
+    };
+  }
   return undefined;
 };
 
-export const createInitialState = (seed?: number): GameState => {
+export const createInitialState = (
+  seed?: number,
+  playerLabels: string[] = [PLAYER_LABEL, AI_LABEL]
+): GameState => {
   const initialSeed = (seed ?? Date.now()) >>> 0;
   const rng = createSeededRng(initialSeed);
   const level = 1;
   const levelConfig = getLevelConfig(level);
   const deck = buildDeckForLevel(level, () => rng.next());
 
+  const players: PlayerState[] = playerLabels.map((label) => ({
+    label,
+    score: 1,
+    drawsUsed: 0,
+    maxDraws: levelConfig.baseMaxDraws,
+    extraDraws: 0,
+    holdSlots: [],
+    backpack: [],
+    victoryShards: 0,
+    wins: 0,
+    passTokens: [],
+    shields: 0,
+    merchantTokens: 0,
+    logPrefix: label,
+    pendingEffects: [],
+    buffs: [],
+    isAI: label === AI_LABEL,
+  }));
+
   const initial: GameState = {
     phase: "playerTurn",
+    subPhase: "turnStart",
     level,
     config: BASE_MATCH_CONFIG,
     deck,
-    player: {
-      label: PLAYER_LABEL,
-      score: 1,
-      drawsUsed: 0,
-      maxDraws: levelConfig.baseMaxDraws,
-      extraDraws: 0,
-      holdSlots: [],
-      backpack: [],
-      victoryShards: 0,
-      wins: 0,
-      passTokens: [],
-      shields: 0,
-      merchantTokens: 0,
-      logPrefix: "玩家",
-      pendingEffects: [],
-      buffs: [],
-    },
-    ai: {
-      label: AI_LABEL,
-      score: 1,
-      drawsUsed: 0,
-      maxDraws: levelConfig.baseMaxDraws,
-      extraDraws: 0,
-      holdSlots: [],
-      backpack: [],
-      victoryShards: 0,
-      wins: 0,
-      passTokens: [],
-      shields: 0,
-      merchantTokens: 0,
-      logPrefix: "AI",
-      pendingEffects: [],
-      buffs: [],
-    },
+    players,
+    currentPlayerIndex: 0,
     activeCard: undefined,
     merchantOffers: [],
     log: ["对决开始！欢迎来到层级 1 —— Entrance Trial。抽卡准备！"],
     rngSeed: rng.getSeed(),
   };
 
+  setCurrentPlayerByIndex(initial, 0);
   return initial;
 };
+
+// 子阶段推进：
+// turnStart -> awaitHoldChoice -> drawingCard -> awaitAction -> turnEnd -> nextPlayerTurnStart -> turnStart
+// playingHoldCard -> awaitHoldChoice
+// discardingHoldCard -> awaitHoldChoice
+export function nextSubPhase(state: GameState): void {
+  if (state.phase !== "playerTurn") {
+    return;
+  }
+  const player = state.players[state.currentPlayerIndex];
+  const from = state.subPhase;
+  switch (state.subPhase) {
+    case undefined:
+    case "turnStart": {
+      player.buffs.forEach((buff) => buff.onTurnStart?.(player, state));
+      state.subPhase = "awaitHoldChoice";
+      break;
+    }
+    case "awaitHoldChoice": {
+      // 前端在此阶段可以多次释放滞留卡；当用户选择结束滞留阶段后，推进至抽卡阶段
+      state.subPhase = "drawingCard";
+      break;
+    }
+    case "drawingCard": {
+      // 真正的抽卡由 drawCard 执行；此处只是在抽完卡后推进到 awaitAction
+      state.subPhase = "awaitAction";
+      break;
+    }
+    case "playingHoldCard": {
+      // 滞留卡结算完成后，回到可继续处理滞留或抽卡
+      state.subPhase = "awaitHoldChoice";
+      break;
+    }
+    case "discardingHoldCard": {
+      // 滞留卡丢弃完成后，回到可继续处理滞留或抽卡
+      state.subPhase = "awaitHoldChoice";
+      break;
+    }
+    case "awaitAction": {
+      // 前端在此阶段选择 play/stash/discard；当没有 activeCard 时结束回合
+      state.subPhase = "turnEnd";
+      break;
+    }
+    case "turnEnd": {
+      player.buffs.forEach((buff) => buff.onTurnEnd?.(player, state));
+      state.subPhase = "nextPlayerTurnStart";
+      break;
+    }
+    case "nextPlayerTurnStart": {
+      const previous = state.players[state.currentPlayerIndex];
+      const nextIndex = setNextPlayerAsCurrent(state);
+      const nextPlayer = state.players[nextIndex];
+      appendLog(
+        state,
+        `${previous.logPrefix} 回合结束，轮到 ${nextPlayer.logPrefix}。`
+      );
+      state.subPhase = "turnStart";
+      break;
+    }
+    default: {
+      state.subPhase = "turnStart";
+    }
+  }
+  // 调试日志：记录子阶段变更
+  appendLog(
+    state,
+    `子阶段: ${from ?? "(none)"} -> ${state.subPhase}`
+  );
+}
 
 const maxDrawsFor = (player: PlayerState): number =>
   player.maxDraws + player.extraDraws;
@@ -489,7 +587,7 @@ const addCardToDiscard = (state: GameState, card: CardInstance): void => {
 export const drawCard = (
   sourceState: GameState
 ): EngineOutcome<ResolveResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn");
+  const validation = ensurePhase(sourceState, "playerTurn", "drawingCard");
   if (validation) return validation;
 
   if (sourceState.activeCard) {
@@ -500,7 +598,7 @@ export const drawCard = (
   }
 
   const state = cloneState(sourceState);
-  const player = state.player;
+  const player = state.players[state.currentPlayerIndex];
   const allowed = maxDrawsFor(player);
   if (player.drawsUsed >= allowed) {
     return {
@@ -524,8 +622,14 @@ export const drawCard = (
   }
 
   player.drawsUsed += 1;
+  // Buff: 抽卡前/后
+  player.buffs.forEach((b) => b.onBeforeDraw?.(player, state));
   state.activeCard = card;
-  appendLog(state, `玩家抽到了 ${card.name}`);
+  player.buffs.forEach((b) => b.onAfterDraw?.(player, state, card));
+
+  nextSubPhase(state); // drawingCard -> awaitAction
+
+  appendLog(state, `${player.logPrefix} 抽到了 ${card.name}`);
 
   return {
     state,
@@ -553,12 +657,19 @@ export const playActiveCard = (
       message: "当前没有待结算的卡牌。",
     };
   }
-
-  const messages = applyCardTo(state, state.player, state.ai, card);
+  const player = state.players[state.currentPlayerIndex];
+  const opponent =
+    state.players[(state.currentPlayerIndex + 1) % state.players.length];
+  // Buff: before play
+  player.buffs.forEach((b) => b.onBeforePlay?.(player, state, card));
+  const messages = applyCardTo(state, player, opponent, card);
   addCardToDiscard(state, card);
   state.activeCard = undefined;
+  // Buff: after play
+  player.buffs.forEach((b) => b.onAfterPlay?.(player, state, card));
   messages.forEach((message) => appendLog(state, message));
-
+  // 自动推进回合子阶段（awaitAction -> turnEnd）
+  nextSubPhase(state);
   return {
     state,
     appliedCard: card,
@@ -577,19 +688,26 @@ export const stashActiveCard = (
       message: "没有可滞留的卡牌。",
     };
   }
-  if (!hasHoldCapacity(sourceState.player)) {
+  const player = sourceState.players[sourceState.currentPlayerIndex];
+  if (!hasHoldCapacity(player)) {
     return {
       type: "invalidPhase",
       message: "滞留位已满。",
     };
   }
-
   const state = cloneState(sourceState);
   const activeCard = state.activeCard!;
-  addCardToHold(state.player, activeCard);
-  appendLog(state, `玩家将 ${activeCard.name} 放入滞留位顶部。`);
+  // Buff: before stash
+  player.buffs.forEach((b) => b.onBeforeStash?.(player, state, activeCard));
+  addCardToHold(state.players[state.currentPlayerIndex], activeCard);
+  appendLog(
+    state,
+    `${player.logPrefix} 将 ${activeCard.name} 放入滞留位顶部。`
+  );
   state.activeCard = undefined;
-
+  // Buff: after stash
+  player.buffs.forEach((b) => b.onAfterStash?.(player, state, activeCard));
+  nextSubPhase(state); // awaitAction -> turnEnd
   return {
     state,
     messages: ["卡牌已放入滞留位。"],
@@ -607,13 +725,17 @@ export const discardActiveCard = (
       message: "没有可以丢弃的卡牌。",
     };
   }
-
+  const player = sourceState.players[sourceState.currentPlayerIndex];
   const state = cloneState(sourceState);
   const activeCard = state.activeCard!;
+  // Buff: before discard
+  player.buffs.forEach((b) => b.onBeforeDiscard?.(player, state, activeCard));
   addCardToDiscard(state, activeCard);
-  appendLog(state, `玩家丢弃了 ${activeCard.name}`);
+  appendLog(state, `${player.logPrefix} 丢弃了 ${activeCard.name}`);
   state.activeCard = undefined;
-
+  // Buff: after discard
+  player.buffs.forEach((b) => b.onAfterDiscard?.(player, state, activeCard));
+  nextSubPhase(state); // awaitAction -> turnEnd
   return {
     state,
     messages: ["卡牌已丢弃。"],
@@ -625,7 +747,8 @@ export const releaseHoldCard = (
 ): EngineOutcome<ActionResult> => {
   const validation = ensurePhase(sourceState, "playerTurn");
   if (validation) return validation;
-  if (sourceState.player.holdSlots.length === 0) {
+  const player = sourceState.players[sourceState.currentPlayerIndex];
+  if (player.holdSlots.length === 0) {
     return {
       type: "noHoldCard",
       message: "滞留位为空。",
@@ -637,17 +760,66 @@ export const releaseHoldCard = (
       message: "先处理当前抽到的卡牌，再释放滞留卡。",
     };
   }
-
   const state = cloneState(sourceState);
-  const holdCard = removeTopHoldCard(state.player)!;
-  const messages = applyCardTo(state, state.player, state.ai, holdCard);
+  const holdCard = removeTopHoldCard(state.players[state.currentPlayerIndex])!;
+  state.subPhase = "playingHoldCard";
+  appendLog(state, `子阶段: awaitHoldChoice -> playingHoldCard`);
+  // Buff: before release
+  player.buffs.forEach((b) => b.onBeforeRelease?.(player, state, holdCard));
+  const opponent =
+    state.players[(state.currentPlayerIndex + 1) % state.players.length];
+  const messages = applyCardTo(
+    state,
+    state.players[state.currentPlayerIndex],
+    opponent,
+    holdCard
+  );
   addCardToDiscard(state, holdCard);
   messages.forEach((message) => appendLog(state, message));
-
+  // Buff: after release
+  player.buffs.forEach((b) => b.onAfterRelease?.(player, state, holdCard));
+  // 回到可继续处理滞留或抽卡
+  nextSubPhase(state); // playingHoldCard -> awaitHoldChoice
   return {
     state,
     appliedCard: holdCard,
     messages,
+  };
+};
+
+export const discardHoldCard = (
+  sourceState: GameState
+): EngineOutcome<ActionResult> => {
+  const validation = ensurePhase(sourceState, "playerTurn");
+  if (validation) return validation;
+  const player = sourceState.players[sourceState.currentPlayerIndex];
+  if (player.holdSlots.length === 0) {
+    return {
+      type: "noHoldCard",
+      message: "滞留位为空。",
+    };
+  }
+  if (sourceState.activeCard) {
+    return {
+      type: "invalidPhase",
+      message: "先处理当前抽到的卡牌，再丢弃滞留卡。",
+    };
+  }
+  const state = cloneState(sourceState);
+  const holdCard = removeTopHoldCard(state.players[state.currentPlayerIndex])!;
+  state.subPhase = "discardingHoldCard";
+  appendLog(state, `子阶段: awaitHoldChoice -> discardingHoldCard`);
+  // Buff: before discard (hold)
+  player.buffs.forEach((b) => b.onBeforeDiscard?.(player, state, holdCard));
+  addCardToDiscard(state, holdCard);
+  appendLog(state, `${player.logPrefix} 丢弃了滞留牌 ${holdCard.name}`);
+  // Buff: after discard (hold)
+  player.buffs.forEach((b) => b.onAfterDiscard?.(player, state, holdCard));
+  nextSubPhase(state); // discardingHoldCard -> awaitHoldChoice
+  return {
+    state,
+    appliedCard: holdCard,
+    messages: ["滞留牌已丢弃。"],
   };
 };
 
@@ -669,39 +841,51 @@ const resolvePassTokens = (state: GameState, actor: PlayerState): string[] => {
   return messages;
 };
 
-const checkShardVictory = (state: GameState): "Player" | "AI" | undefined => {
-  if (state.player.victoryShards >= state.config.shardsToWin) return "Player";
-  if (state.ai.victoryShards >= state.config.shardsToWin) return "AI";
+const checkShardVictory = (state: GameState): string | undefined => {
+  for (const player of state.players) {
+    if (player.victoryShards >= state.config.shardsToWin) return player.label;
+  }
   return undefined;
 };
 
 const applyLevelEnd = (state: GameState): void => {
-  const playerMessages = resolvePassTokens(state, state.player);
-  const aiMessages = resolvePassTokens(state, state.ai);
-  playerMessages
-    .concat(aiMessages)
-    .forEach((message) => appendLog(state, message));
-
-  const playerScore = state.player.score;
-  const aiScore = state.ai.score;
-
-  if (playerScore > aiScore) {
-    state.player.wins += 1;
-    appendLog(state, `玩家以 ${playerScore} : ${aiScore} 赢下本层！`);
-  } else if (aiScore > playerScore) {
-    state.ai.wins += 1;
-    appendLog(state, `AI 以 ${aiScore} : ${playerScore} 赢下本层。`);
-  } else {
-    appendLog(
-      state,
-      `双方战平 ${playerScore} : ${aiScore}，视为平局不计胜场。`
-    );
+  // 结算所有玩家的通行证
+  state.players.forEach((player) => {
+    const messages = resolvePassTokens(state, player);
+    messages.forEach((message) => appendLog(state, message));
+  });
+  // 结算分数，统计胜场
+  if (state.players.length >= 2) {
+    const p0 = state.players[0];
+    const p1 = state.players[1];
+    if (p0.score > p1.score) {
+      p0.wins += 1;
+      appendLog(
+        state,
+        `${p0.logPrefix} 以 ${p0.score} : ${p1.score} 赢下本层！`
+      );
+    } else if (p1.score > p0.score) {
+      p1.wins += 1;
+      appendLog(
+        state,
+        `${p1.logPrefix} 以 ${p1.score} : ${p0.score} 赢下本层。`
+      );
+    } else {
+      appendLog(
+        state,
+        `双方战平 ${p0.score} : ${p1.score}，视为平局不计胜场。`
+      );
+    }
   }
-
+  // 判断胜利
   const shardWinner = checkShardVictory(state);
-  const bestOfFiveWinner =
-    state.player.wins >= 3 ? "Player" : state.ai.wins >= 3 ? "AI" : undefined;
-
+  let bestOfFiveWinner: string | undefined = undefined;
+  for (const player of state.players) {
+    if (player.wins >= 3) {
+      bestOfFiveWinner = player.label;
+      break;
+    }
+  }
   state.winner = shardWinner ?? bestOfFiveWinner;
 };
 
@@ -718,15 +902,15 @@ const prepareNextLevel = (state: GameState): void => {
   state.deck = deck;
 
   const levelConfig = getLevelConfig(state.level);
-  resetPlayerForLevel(state.player, levelConfig);
-  resetPlayerForLevel(state.ai, levelConfig);
-  applyPendingLevelEffects(state, state.player);
-  applyPendingLevelEffects(state, state.ai);
+  state.players.forEach((player) => {
+    resetPlayerForLevel(player, levelConfig);
+    applyPendingLevelEffects(state, player);
+  });
 
   state.activeCard = undefined;
+  setCurrentPlayerByLabel(state, PLAYER_LABEL);
   appendLog(state, `进入层级 ${state.level} —— ${levelConfig.name}`);
 };
-
 
 /**
  * 获取 AI 行动的每一步（每步一个 state），用于前端逐步推进。
@@ -734,8 +918,14 @@ const prepareNextLevel = (state: GameState): void => {
 export function getAiTurnSteps(sourceState: GameState): GameState[] {
   const steps: GameState[] = [];
   let state = cloneState(sourceState);
-  const ai = state.ai;
-  const player = state.player;
+  const aiIndex = state.players.findIndex((p) => p.label === AI_LABEL);
+  if (aiIndex === -1) {
+    return steps;
+  }
+  state.currentPlayerIndex = aiIndex;
+  const ai = state.players[aiIndex];
+  const player =
+    state.players.find((_, idx) => idx !== aiIndex) ?? state.players[0];
   const allowed = maxDrawsFor(ai);
   const rng = createSeededRng(state.rngSeed);
 
@@ -748,27 +938,28 @@ export function getAiTurnSteps(sourceState: GameState): GameState[] {
     return true;
   };
 
-  while (shouldDraw()) {
+  // 只执行一次抽卡和处理
+  if (shouldDraw()) {
     const card = consumeCard(state);
-    if (!card) break;
-    ai.drawsUsed += 1;
-    appendLog(state, `AI 抽到了 ${card.name}`);
-    steps.push(cloneState(state));
-
-    const decision = decideAiAction(card, ai, player);
-    if (decision === "hold" && hasHoldCapacity(ai)) {
-      addCardToHold(ai, card);
-      appendLog(state, "AI 将卡牌置入滞留位顶部。");
+    if (card) {
+      ai.drawsUsed += 1;
+      appendLog(state, `AI 抽到了 ${card.name}`);
       steps.push(cloneState(state));
-      continue;
-    }
-    const messages = applyCardTo(state, ai, player, card);
-    addCardToDiscard(state, card);
-    messages.forEach((message) => appendLog(state, message));
-    steps.push(cloneState(state));
-  }
 
-  if (ai.holdSlots.length > 0 && ai.score < player.score) {
+      const decision = decideAiAction(card, ai, player);
+      if (decision === "hold" && hasHoldCapacity(ai)) {
+        addCardToHold(ai, card);
+        appendLog(state, "AI 将卡牌置入滞留位顶部。");
+        steps.push(cloneState(state));
+      } else {
+        const messages = applyCardTo(state, ai, player, card);
+        addCardToDiscard(state, card);
+        messages.forEach((message) => appendLog(state, message));
+        steps.push(cloneState(state));
+      }
+    }
+  } else if (ai.holdSlots.length > 0 && ai.score < player.score) {
+    // 没有抽卡机会时，尝试释放一张滞留卡
     const holdCard = removeTopHoldCard(ai);
     if (holdCard) {
       const messages = applyCardTo(state, ai, player, holdCard);
@@ -782,15 +973,12 @@ export function getAiTurnSteps(sourceState: GameState): GameState[] {
   return steps;
 }
 
-/**
- * 异步执行 AI 回合，带有随机延时（100-500ms）
- */
-
+// 异步执行 AI 回合，带有随机延时（100-500ms）
 export const executeAiTurnAsync = async (
   sourceState: GameState,
   onStep?: (state: GameState) => void
 ): Promise<GameState> => {
-  if (sourceState.phase !== "aiTurn") {
+  if (sourceState.phase !== "playerTurn") {
     return sourceState;
   }
 
@@ -803,29 +991,37 @@ export const executeAiTurnAsync = async (
     lastState = step;
   }
 
-  // 结算阶段
-  const state = cloneState(lastState);
-  state.phase = "levelEnd";
-  applyLevelEnd(state);
-
-  if (state.winner) {
-    state.phase = "matchEnd";
-    appendLog(
-      state,
-      `比赛结束，${state.winner === "Player" ? "玩家" : "AI"} 获胜！`
-    );
+  // AI只执行一回合，结束后切换到下一个玩家
+  let state = finishPlayerTurn(lastState);
+  // 如果所有玩家都不能再抽卡，则自动结算
+  if (allPlayersCannotDraw(state)) {
+    state.phase = "finishRound";
+    applyLevelEnd(state);
+    // 判断是否比赛结束
+    if (state.winner) {
+      state.phase = "matchEnd";
+      const winnerDisplay =
+        state.winner === PLAYER_LABEL ? "玩家" : state.winner;
+      appendLog(state, `比赛结束，${winnerDisplay} 获胜！`);
+      return state;
+    }
+    // 进入下一层或商人
+    const transition = nextLevelOrMerchantPhase(state.level);
+    if (transition === "merchant" && state.level < state.config.totalLevels) {
+      prepareMerchant(state);
+      setCurrentPlayerByLabel(state, PLAYER_LABEL);
+      state.phase = "merchant";
+      return state;
+    }
+    prepareNextLevel(state);
+    if (state.level > state.config.totalLevels) {
+      state.phase = "matchEnd";
+      return state;
+    }
+    setCurrentPlayerByLabel(state, PLAYER_LABEL);
+    state.phase = "playerTurn";
     return state;
   }
-
-  const transition = nextLevelOrMerchantPhase(state.level);
-  if (transition === "merchant" && state.level < state.config.totalLevels) {
-    prepareMerchant(state);
-    state.phase = "merchant";
-    return state;
-  }
-
-  prepareNextLevel(state);
-  state.phase = "playerTurn";
   return state;
 };
 
@@ -869,10 +1065,29 @@ export const finishPlayerTurn = (sourceState: GameState): GameState => {
   }
 
   const state = cloneState(sourceState);
-  state.phase = "aiTurn";
-  appendLog(state, "玩家结束回合，轮到 AI。");
+  // 不直接切人，改为推进子阶段进入 nextPlayerTurnStart，由 nextSubPhase 负责切换
+  nextSubPhase(state); // turnEnd -> nextPlayerTurnStart
+  return state;
+};
 
-  // AI 回合现在通过异步函数处理，这里只是标记阶段
+// 以不可变方式推进子阶段，返回新状态
+export const advanceSubPhase = (sourceState: GameState): GameState => {
+  const state = cloneState(sourceState);
+  nextSubPhase(state);
+  return state;
+};
+
+// 若当前处于 nextPlayerTurnStart，则切换到下一玩家并进入 turnStart；
+// 若当前是 turnStart，则进入 awaitHoldChoice。
+export const beginNextPlayerTurn = (sourceState: GameState): GameState => {
+  const state = cloneState(sourceState);
+  if (state.phase !== "playerTurn") return state;
+  if (state.subPhase === "nextPlayerTurnStart") {
+    nextSubPhase(state); // 会切换 currentPlayer 并置为 turnStart
+  }
+  if (state.subPhase === undefined || state.subPhase === "turnStart") {
+    nextSubPhase(state); // turnStart -> awaitHoldChoice
+  }
   return state;
 };
 
@@ -892,6 +1107,7 @@ const prepareMerchant = (state: GameState): void => {
   }
   state.merchantOffers = offers;
   state.rngSeed = rng.getSeed();
+  setCurrentPlayerByLabel(state, PLAYER_LABEL);
   appendLog(state, "旅行商人现身，挑选你的增益吧！");
 };
 
@@ -930,15 +1146,16 @@ export const acceptMerchantOffer = (
     };
   }
 
-  const canPlaceInHold = hasHoldCapacity(state.player);
+  const player = state.players[state.currentPlayerIndex];
+  const canPlaceInHold = hasHoldCapacity(player);
   const placement = canPlaceInHold ? "滞留位顶部" : "背包";
   if (canPlaceInHold) {
-    addCardToHold(state.player, chosen.card);
+    addCardToHold(player, chosen.card);
   } else {
-    state.player.backpack.push(chosen.card);
+    player.backpack.push(chosen.card);
   }
 
-  const costMessage = applyMerchantCost(state.player, chosen.cost);
+  const costMessage = applyMerchantCost(player, chosen.cost);
 
   appendLog(state, `玩家购入 ${chosen.card.name}，放入${placement}。`);
   appendLog(state, costMessage);
@@ -949,9 +1166,12 @@ export const acceptMerchantOffer = (
 
 const proceedFromMerchant = (state: GameState): void => {
   prepareNextLevel(state);
-  if (state.phase !== "matchEnd") {
-    state.phase = "playerTurn";
+  if (state.level > state.config.totalLevels) {
+    state.phase = "matchEnd";
+    return;
   }
+  setCurrentPlayerByLabel(state, PLAYER_LABEL);
+  state.phase = "playerTurn";
 };
 
 export const unpackBackpack = (
@@ -964,23 +1184,26 @@ export const unpackBackpack = (
       message: "只有在玩家回合才能使用背包。",
     };
   }
-  if (!hasHoldCapacity(sourceState.player)) {
+  const player = sourceState.players[sourceState.currentPlayerIndex];
+  if (!hasHoldCapacity(player)) {
     return {
       type: "invalidPhase",
       message: "滞留位已满，无法从背包取卡。",
     };
   }
-  const card = sourceState.player.backpack[index];
+  const card = player.backpack[index];
   if (!card) {
     return {
       type: "invalidPhase",
       message: "该背包槽位为空。",
     };
   }
-
   const state = cloneState(sourceState);
-  const [picked] = state.player.backpack.splice(index, 1);
-  addCardToHold(state.player, picked);
+  const [picked] = state.players[state.currentPlayerIndex].backpack.splice(
+    index,
+    1
+  );
+  addCardToHold(state.players[state.currentPlayerIndex], picked);
   appendLog(state, `从背包取出 ${picked.name} 放入滞留位顶部。`);
   return state;
 };
