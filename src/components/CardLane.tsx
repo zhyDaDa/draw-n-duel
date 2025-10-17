@@ -2,7 +2,7 @@ import { Tooltip } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { CardInstance } from "../game/types";
-import { MAX_HOLD_SLOTS } from "../game/types";
+import { DEFAULT_MAX_HOLD_SLOTS } from "../game/types";
 import CardDisplay, { describeCardEffect } from "./CardDisplay";
 
 export type CardLaneAnimationType =
@@ -82,7 +82,7 @@ const CardLane: React.FC<CardLaneProps> = ({
   deckRemaining,
   activeCard,
   holdSlots,
-  maxHoldSlots = MAX_HOLD_SLOTS,
+  maxHoldSlots = DEFAULT_MAX_HOLD_SLOTS,
   animationEvent,
 }) => {
   const [ghostCard, setGhostCard] = useState<GhostCard | null>(null);

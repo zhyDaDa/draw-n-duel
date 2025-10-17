@@ -22,7 +22,7 @@ import {
   BASE_MATCH_CONFIG,
   DEFAULT_MAX_DRAWS,
   PLAYER_LABEL,
-  MAX_HOLD_SLOTS,
+  DEFAULT_MAX_HOLD_SLOTS,
   type ActionResult,
   type CardInstance,
   type EngineOutcome,
@@ -76,8 +76,8 @@ const cloneState = (state: GameState): GameState => ({
 
 const addCardToHold = (player: PlayerState, card: CardInstance): void => {
   player.holdSlots.unshift(card);
-  if (player.holdSlots.length > MAX_HOLD_SLOTS) {
-    player.holdSlots.length = MAX_HOLD_SLOTS;
+  if (player.holdSlots.length > player.MAX_HOLD_SLOTS) {
+    player.holdSlots.length = player.MAX_HOLD_SLOTS;
   }
 };
 
@@ -85,7 +85,7 @@ const removeTopHoldCard = (player: PlayerState): CardInstance | undefined =>
   player.holdSlots.shift();
 
 const hasHoldCapacity = (player: PlayerState): boolean =>
-  player.holdSlots.length < MAX_HOLD_SLOTS;
+  player.holdSlots.length < player.MAX_HOLD_SLOTS;
 
 const setCurrentPlayerByIndex = (state: GameState, index: number): void => {
   if (index >= 0 && index < state.players.length) {
@@ -296,12 +296,17 @@ export const ensurePhase = (
   if (expectedSubPhase && state.subPhase !== expectedSubPhase) {
     return {
       type: "invalidPhase",
-      message: `当前子阶段为 ${state.subPhase ?? "(none)"}，预期 ${expectedSubPhase}。`,
+      message: `当前子阶段为 ${
+        state.subPhase ?? "(none)"
+      }，预期 ${expectedSubPhase}。`,
     };
   }
   return undefined;
 };
-
+export const setLevelPhase = (state: GameState, phase: GameState["phase"]): void => {
+  console.log(`%c主动更改阶段: ${state.phase} -> ${phase}`, "border: 2px solid #0000aa; padding-left: 4px; border-radius: 4px;");
+  state.phase = phase;
+};
 export const createInitialState = (
   seed?: number,
   playerLabels: string[] = [PLAYER_LABEL, AI_LABEL]
@@ -329,10 +334,11 @@ export const createInitialState = (
     pendingEffects: [],
     buffs: [],
     isAI: label === AI_LABEL,
+    MAX_HOLD_SLOTS: DEFAULT_MAX_HOLD_SLOTS,
   }));
 
   const initial: GameState = {
-    phase: "playerTurn",
+    phase: "levelStart",
     subPhase: "turnStart",
     level,
     config: BASE_MATCH_CONFIG,
@@ -349,9 +355,9 @@ export const createInitialState = (
   return initial;
 };
 
-// 子阶段推进：
+// div: 子阶段推进：
 // turnStart -> awaitHoldChoice -> drawingCard -> awaitAction -> turnEnd -> nextPlayerTurnStart -> turnStart
-// playingHoldCard -> awaitHoldChoice
+// releaselingHoldCard -> awaitHoldChoice
 // discardingHoldCard -> awaitHoldChoice
 export function nextSubPhase(state: GameState): void {
   if (state.phase !== "playerTurn") {
@@ -376,7 +382,7 @@ export function nextSubPhase(state: GameState): void {
       state.subPhase = "awaitAction";
       break;
     }
-    case "playingHoldCard": {
+    case "releaselingHoldCard": {
       // 滞留卡结算完成后，回到可继续处理滞留或抽卡
       state.subPhase = "awaitHoldChoice";
       break;
@@ -386,6 +392,9 @@ export function nextSubPhase(state: GameState): void {
       state.subPhase = "awaitHoldChoice";
       break;
     }
+    case "stashingCard":
+    case "playingCard":
+    case "discardingCard": 
     case "awaitAction": {
       // 前端在此阶段选择 play/stash/discard；当没有 activeCard 时结束回合
       state.subPhase = "turnEnd";
@@ -393,6 +402,12 @@ export function nextSubPhase(state: GameState): void {
     }
     case "turnEnd": {
       player.buffs.forEach((buff) => buff.onTurnEnd?.(player, state));
+      // 在回合结束时判断是否整轮结束
+      if (allPlayersCannotDraw(state)) {
+        appendLog(state, "所有玩家抽牌机会已用尽，进入本轮结算。");
+        state.phase = "finishRound"; // 进入 Level Phase 的结算
+        break; // 留给 nextLevelPhase/finishLevel 推进
+      }
       state.subPhase = "nextPlayerTurnStart";
       break;
     }
@@ -412,10 +427,18 @@ export function nextSubPhase(state: GameState): void {
     }
   }
   // 调试日志：记录子阶段变更
-  appendLog(
-    state,
-    `子阶段: ${from ?? "(none)"} -> ${state.subPhase}`
+  // appendLog(state, `子阶段: ${from ?? "(none)"} -> ${state.subPhase}`);
+  console.log(`子阶段: ${from ?? "(none)"} -> ${state.subPhase}`);
+}
+export function setSubPhase(
+  state: GameState,
+  subPhase: GameState["subPhase"]
+): void {
+  console.log(
+    `%c主动更改子阶段: ${state.subPhase ?? "(none)"} -> ${subPhase}`,
+    "border-left: 2px solid #00aa00; padding-left: 4px;"
   );
+  state.subPhase = subPhase;
 }
 
 const maxDrawsFor = (player: PlayerState): number =>
@@ -717,7 +740,7 @@ export const stashActiveCard = (
 export const discardActiveCard = (
   sourceState: GameState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn");
+  const validation = ensurePhase(sourceState, "playerTurn", "awaitAction");
   if (validation) return validation;
   if (!sourceState.activeCard) {
     return {
@@ -728,6 +751,7 @@ export const discardActiveCard = (
   const player = sourceState.players[sourceState.currentPlayerIndex];
   const state = cloneState(sourceState);
   const activeCard = state.activeCard!;
+  setSubPhase(state, "discardingCard");
   // Buff: before discard
   player.buffs.forEach((b) => b.onBeforeDiscard?.(player, state, activeCard));
   addCardToDiscard(state, activeCard);
@@ -745,7 +769,7 @@ export const discardActiveCard = (
 export const releaseHoldCard = (
   sourceState: GameState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn");
+  const validation = ensurePhase(sourceState, "playerTurn", "awaitHoldChoice");
   if (validation) return validation;
   const player = sourceState.players[sourceState.currentPlayerIndex];
   if (player.holdSlots.length === 0) {
@@ -762,8 +786,7 @@ export const releaseHoldCard = (
   }
   const state = cloneState(sourceState);
   const holdCard = removeTopHoldCard(state.players[state.currentPlayerIndex])!;
-  state.subPhase = "playingHoldCard";
-  appendLog(state, `子阶段: awaitHoldChoice -> playingHoldCard`);
+  setSubPhase(state, "releaselingHoldCard");
   // Buff: before release
   player.buffs.forEach((b) => b.onBeforeRelease?.(player, state, holdCard));
   const opponent =
@@ -779,7 +802,7 @@ export const releaseHoldCard = (
   // Buff: after release
   player.buffs.forEach((b) => b.onAfterRelease?.(player, state, holdCard));
   // 回到可继续处理滞留或抽卡
-  nextSubPhase(state); // playingHoldCard -> awaitHoldChoice
+  nextSubPhase(state); // releaselingHoldCard -> awaitHoldChoice
   return {
     state,
     appliedCard: holdCard,
@@ -790,7 +813,7 @@ export const releaseHoldCard = (
 export const discardHoldCard = (
   sourceState: GameState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn");
+  const validation = ensurePhase(sourceState, "playerTurn", "awaitHoldChoice");
   if (validation) return validation;
   const player = sourceState.players[sourceState.currentPlayerIndex];
   if (player.holdSlots.length === 0) {
@@ -799,16 +822,9 @@ export const discardHoldCard = (
       message: "滞留位为空。",
     };
   }
-  if (sourceState.activeCard) {
-    return {
-      type: "invalidPhase",
-      message: "先处理当前抽到的卡牌，再丢弃滞留卡。",
-    };
-  }
   const state = cloneState(sourceState);
   const holdCard = removeTopHoldCard(state.players[state.currentPlayerIndex])!;
-  state.subPhase = "discardingHoldCard";
-  appendLog(state, `子阶段: awaitHoldChoice -> discardingHoldCard`);
+  setSubPhase(state, "discardingHoldCard");
   // Buff: before discard (hold)
   player.buffs.forEach((b) => b.onBeforeDiscard?.(player, state, holdCard));
   addCardToDiscard(state, holdCard);
@@ -910,6 +926,8 @@ const prepareNextLevel = (state: GameState): void => {
   state.activeCard = undefined;
   setCurrentPlayerByLabel(state, PLAYER_LABEL);
   appendLog(state, `进入层级 ${state.level} —— ${levelConfig.name}`);
+  // 进入层起始阶段，等待推进到对战
+  state.phase = "levelStart";
 };
 
 /**
@@ -993,33 +1011,9 @@ export const executeAiTurnAsync = async (
 
   // AI只执行一回合，结束后切换到下一个玩家
   let state = finishPlayerTurn(lastState);
-  // 如果所有玩家都不能再抽卡，则自动结算
+  // 如果所有玩家都不能再抽卡，交给 level phase 推进
   if (allPlayersCannotDraw(state)) {
     state.phase = "finishRound";
-    applyLevelEnd(state);
-    // 判断是否比赛结束
-    if (state.winner) {
-      state.phase = "matchEnd";
-      const winnerDisplay =
-        state.winner === PLAYER_LABEL ? "玩家" : state.winner;
-      appendLog(state, `比赛结束，${winnerDisplay} 获胜！`);
-      return state;
-    }
-    // 进入下一层或商人
-    const transition = nextLevelOrMerchantPhase(state.level);
-    if (transition === "merchant" && state.level < state.config.totalLevels) {
-      prepareMerchant(state);
-      setCurrentPlayerByLabel(state, PLAYER_LABEL);
-      state.phase = "merchant";
-      return state;
-    }
-    prepareNextLevel(state);
-    if (state.level > state.config.totalLevels) {
-      state.phase = "matchEnd";
-      return state;
-    }
-    setCurrentPlayerByLabel(state, PLAYER_LABEL);
-    state.phase = "playerTurn";
     return state;
   }
   return state;
@@ -1061,12 +1055,14 @@ export const finishPlayerTurn = (sourceState: GameState): GameState => {
     return sourceState;
   }
   if (sourceState.activeCard) {
-    return sourceState;
+    discardActiveCard(sourceState);
   }
 
   const state = cloneState(sourceState);
+  setSubPhase(state, "turnEnd");
   // 不直接切人，改为推进子阶段进入 nextPlayerTurnStart，由 nextSubPhase 负责切换
   nextSubPhase(state); // turnEnd -> nextPlayerTurnStart
+  // 若整轮结束判断在 nextSubPhase 内将 phase 切到 finishRound，这里不再直接处理
   return state;
 };
 
@@ -1148,16 +1144,15 @@ export const acceptMerchantOffer = (
 
   const player = state.players[state.currentPlayerIndex];
   const canPlaceInHold = hasHoldCapacity(player);
-  const placement = canPlaceInHold ? "滞留位顶部" : "背包";
   if (canPlaceInHold) {
     addCardToHold(player, chosen.card);
+    appendLog(state, `玩家购入 ${chosen.card.name}，放入滞留位。`);
   } else {
-    player.backpack.push(chosen.card);
+    appendLog(state, `${player.logPrefix} 的滞留位已满, 奖励卡牌丢失！`);
   }
 
   const costMessage = applyMerchantCost(player, chosen.cost);
 
-  appendLog(state, `玩家购入 ${chosen.card.name}，放入${placement}。`);
   appendLog(state, costMessage);
   state.merchantOffers = [];
   proceedFromMerchant(state);
@@ -1170,40 +1165,63 @@ const proceedFromMerchant = (state: GameState): void => {
     state.phase = "matchEnd";
     return;
   }
-  setCurrentPlayerByLabel(state, PLAYER_LABEL);
-  state.phase = "playerTurn";
+  // 进入下一层的 levelStart，等待外部驱动到 playerTurn
 };
 
-export const unpackBackpack = (
-  sourceState: GameState,
-  index: number
-): EngineOutcome<GameState> => {
-  if (sourceState.phase !== "playerTurn") {
-    return {
-      type: "invalidPhase",
-      message: "只有在玩家回合才能使用背包。",
-    };
+// ===== Level Phase 推进（与 subPhase 类似的有限状态流） =====
+export function nextLevelPhase(state: GameState): void {
+  switch (state.phase) {
+    case "levelStart": {
+      // 开始对战：进入玩家回合流程
+      setCurrentPlayerByLabel(state, PLAYER_LABEL);
+      state.subPhase = "turnStart";
+      state.phase = "playerTurn";
+      break;
+    }
+    case "finishRound": {
+      // 进入层结算动画阶段
+      applyLevelEnd(state);
+      if (state.winner) {
+        state.phase = "matchEnd";
+        const winnerDisplay =
+          state.winner === PLAYER_LABEL ? "玩家" : state.winner;
+        appendLog(state, `比赛结束，${winnerDisplay} 获胜！`);
+        break;
+      }
+      state.phase = "finishLevel";
+      break;
+    }
+    case "finishLevel": {
+      // 决定是商人还是下一层
+      const transition = nextLevelOrMerchantPhase(state.level);
+      if (transition === "merchant" && state.level < state.config.totalLevels) {
+        prepareMerchant(state);
+        state.phase = "merchant";
+        break;
+      }
+      prepareNextLevel(state); // 将 phase 置为 levelStart
+      break;
+    }
+    default:
+      break;
   }
-  const player = sourceState.players[sourceState.currentPlayerIndex];
-  if (!hasHoldCapacity(player)) {
-    return {
-      type: "invalidPhase",
-      message: "滞留位已满，无法从背包取卡。",
-    };
-  }
-  const card = player.backpack[index];
-  if (!card) {
-    return {
-      type: "invalidPhase",
-      message: "该背包槽位为空。",
-    };
-  }
+}
+
+// 以不可变方式推进 Level Phase
+export const advanceLevelPhase = (sourceState: GameState): GameState => {
   const state = cloneState(sourceState);
-  const [picked] = state.players[state.currentPlayerIndex].backpack.splice(
-    index,
-    1
-  );
-  addCardToHold(state.players[state.currentPlayerIndex], picked);
-  appendLog(state, `从背包取出 ${picked.name} 放入滞留位顶部。`);
+  nextLevelPhase(state);
+  return state;
+};
+
+// 可用于异步层结算（动画/延时），这里提供同步便捷方法
+export const finishLevel = (sourceState: GameState): GameState => {
+  const state = cloneState(sourceState);
+  if (state.phase === "finishRound") {
+    nextLevelPhase(state); // -> finishLevel 或 matchEnd
+  }
+  if (state.phase === "finishLevel") {
+    nextLevelPhase(state); // -> merchant 或 levelStart
+  }
   return state;
 };

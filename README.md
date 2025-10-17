@@ -67,17 +67,88 @@
 
 详细原型见 `cards.ts`，每张卡都会在实例化时生成随机数值（例如 $\pm2\sim\pm8$ 的加减幅度），并以稀有度控制出现概率。
 
-## ⚙️ 状态机设计
+## ⚙️ 状态机设计（已与代码同步）
 
-- `GameState.phase`: `'playerTurn' | 'aiTurn' | 'levelEnd' | 'merchant' | 'matchEnd'`
+- `GameState.levelPhase`（新增，关卡级主流程）:
+  - `'levelStart' | 'playerTurn' | 'levelEnd' | 'finishLevel' | 'merchant' | 'prepareNextLevel' | 'gameOver'`
+- `GameState.phase`（保留，回合/对局内的粗粒度阶段，向下兼容）: `'playerTurn' | 'finishRound' | 'merchant' | 'matchEnd'`
+- `GameState.subPhase`：
+  - `turnStart` → 回合开始，触发当前玩家 Buff 的 `onTurnStart`
+  - `awaitHoldChoice` → 可释放/丢弃滞留或进入抽卡
+  - `releaselingHoldCard` / `discardingHoldCard` → 正在结算/丢弃滞留牌，处理完毕自动返回 `awaitHoldChoice`
+  - `drawingCard` → 进入抽卡动作（动作完成后推进到 `awaitAction`）
+  - `awaitAction` → 对 activeCard 进行“结算/滞留/丢弃”
+  - `turnEnd` → 触发当前玩家 Buff 的 `onTurnEnd`，并在此时统一判断是否整轮结束
+  - `nextPlayerTurnStart` → 切换到下一名玩家并进入其 `turnStart`
 - `GameState.level`: 1-5，半层用 `merchant` phase 标识。
-- `PlayerState`：维护 `score`、`drawsUsed`、`extraDraws`、`holdCard`、`backpack`、`victoryShards`、`wins`、`passTokens`。
+- `PlayerState`：维护 `score`、`drawsUsed`、`maxDraws`、`extraDraws`、`holdSlots`（滞留栈，LIFO）、`backpack`、`victoryShards`、`wins`、`passTokens`、`buffs` 等。
 - `DeckState`：`drawPile`、`discardPile`、`publicInfo`（剩余胜利碎片、稀有卡数量）。
-- `LogEntry`：时间戳、事件类型、描述文本，用于 UI 日志回放。
+- `LogEntry`：每次子阶段变更都会记录一条：`子阶段: from -> to`。
 
-所有数值运算通过 `engine.ts` 中的纯函数完成，React 组件只负责触发动作和展示结果。
+说明：所有数值运算通过 `engine.ts` 的纯函数完成，React 组件只负责触发动作与展示结果。
+
+### Level Phase 状态机（新增）
+
+为对齐 README 顶部流程图，关卡级状态机与 subPhase 采用相同的“可验证 + 推进行为”模式：
+
+- `ensureLevelPhase(state, phase)`：校验当前是否处于指定关卡阶段，不匹配返回错误结果（不变更状态）。
+- `advanceLevelPhase(state)`：将关卡阶段按主线推进一格（只处理“自动主线”环节）。
+- `beginLevel(state)`：从 `levelStart` 进入 `playerTurn`，构建并洗牌当前层的卡堆、重置当层统计与公开信息。
+- `finishRound(state)`：在 subPhase 判定“所有玩家均无法继续抽牌”后，推进关卡阶段至 `levelEnd`。
+- `finishLevelAndJudge(state)`：在 `finishLevel` 阶段结算所有玩家分数、碎片/胜场与延迟效果（如通行证）；若已有玩家抢三则切至 `gameOver`，否则进入“是否还有下一层”的分支判定。
+- `maybeMerchant(state)`：依据层数命中 2.5 / 4.5 等半层事件，切至 `merchant`；否则进入 `prepareNextLevel`。
+- `prepareNextLevel(state)`：清理当层临时数据，层数 +1，回到 `levelStart`（随后 `beginLevel`）。
+- `gameOver(state)`：对局结束，保留最终统计与日志。
+
+说明：以上 API 与 subPhase 的 `ensurePhase/advanceSubPhase` 使用体验保持一致，便于在 UI/AI 层做线性驱动与断点恢复。
 
 ## 操作逻辑流程图
+
+```mermaid
+---
+config:
+  theme: forest
+  look: neo
+  layout: elk
+id: 70b8d4d3-90f8-4ab0-a02a-e0bacdc481dd
+---
+flowchart TB
+ subgraph s1["游戏引擎主要流程"]
+    direction TB
+        A1(["游戏开始
+            createInitialState"])
+    B["一层的开始\nlevelStart"]
+    C["回合制\nplayerTurn"]
+    D["全部回合结束的结算\nlevelEnd"]
+    E["结算一个level的所有人分数\n(有动画, 异步)\nfinishLevel"]
+        H{"是否还有下一层？"}
+        I(["游戏结束
+            gameOver"])
+    F["特定层之间的商人\n(有动画)\nmerchant"]
+    G["下一层的开始的准备\nprepareNextLevel"]
+  end
+    A1 --> B
+    B L_B_C_0@--> C
+    C L_C_D_0@--> D
+    D L_D_E_0@--> E
+    E -- 抢三胜利 --> I
+    E L_E_H_0@--> H
+    H -- 是 --> F
+    H -- 否 --> G
+    F --> G
+    G --> B
+    B@{ shape: rect}
+    C@{ shape: rect}
+    D@{ shape: rect}
+    E@{ shape: rect}
+    F@{ shape: rect}
+    G@{ shape: rect}
+    L_B_C_0@{ animation: fast } 
+    L_C_D_0@{ animation: fast } 
+    L_D_E_0@{ animation: fast } 
+    L_E_H_0@{ animation: slow }
+
+```
 
 ```mermaid
 ---
@@ -85,6 +156,7 @@ config:
   look: neo
   layout: elk
   theme: neo
+id: 45d8229d-ddf7-44bb-b2fd-4b04b47c383b
 ---
 flowchart TB
  subgraph s1["图例"]
@@ -103,8 +175,8 @@ flowchart TB
         H["stashingCard"]
         Z["turnEnd"]
         Z1["nextPlayerTurnStart"]
-        X1["playingStashedCard"]
-        X2["discardingStashedCard"]
+  X1["releaselingHoldCard"]
+  X2["discardingHoldCard"]
         s1
   end
     A -- N: 处理回合开始Buffs --> B
@@ -157,16 +229,57 @@ flowchart TB
     style X2 fill:#FFFFFF
     style s1 fill:#757575,stroke:#FFFFFF,color:#FFFFFF
     style subGraph1 fill:#BBDEFB
-
 ```
 
-## 🧠 主要交互逻辑
+## 🧠 主要交互逻辑（函数与阶段对应）
 
-- **抽牌**：`engine.drawCard()` 返回新的 `GameState` + 抽到的 `CardInstance`。
-- **使用卡牌**：`engine.resolveCard()` 根据 `CardEffect` 类型计算分数或状态。
-- **滞留位释放**：`engine.releaseHold()`，支持多张连锁时的加成描述。
-- **回合结束**：`engine.completeTurn()` 自动触发延迟效果、AI 行动和胜利判断。
-- **旅行商人**：`engine.presentMerchant()` 生成报价列表，`engine.acceptOffer()` 更新玩家库存。
+- 抽牌：
+  - 在 `awaitHoldChoice` 通过 `advanceSubPhase()` 进入 `drawingCard`，随后调用 `engine.drawCard()` 抽到 `activeCard`，引擎自动推进到 `awaitAction`。
+- 使用当前抽到的卡（activeCard）：
+  - `engine.playActiveCard()`，处理完后 UI 调用 `finishPlayerTurn()` 推进到 `turnEnd`，引擎在此统一判断整轮是否结束，若未结束则进入下一玩家回合。
+- 将当前抽到的卡滞留：
+  - `engine.stashActiveCard()`，随后 UI 调用 `finishPlayerTurn()` 推进回合。
+- 丢弃当前抽到的卡：
+  - `engine.discardActiveCard()`，随后 UI 调用 `finishPlayerTurn()` 推进回合。
+- 释放/丢弃滞留牌：
+  - `engine.releaseHoldCard()` / `engine.discardHoldCard()`，引擎进入 `releaselingHoldCard` / `discardingHoldCard`，处理完毕自动回到 `awaitHoldChoice`。
+- 回合开始/推进：
+  - `engine.beginNextPlayerTurn()`：当子阶段为 `nextPlayerTurnStart` 时切到下一玩家并置为 `turnStart`；处于 `turnStart` 会自动推进到 `awaitHoldChoice`。
+- 回合结束与整轮结束：
+  - UI 调用 `engine.finishPlayerTurn()` 进入 `turnEnd`；引擎在 `turnEnd` 统一判定是否进入 `finishRound`（所有玩家无法继续抽牌），否则进入 `nextPlayerTurnStart`。
+- 旅行商人：
+  - `engine.skipMerchant()` / `engine.acceptMerchantOffer(index)` 用于跳过或接受报价。
+
+## 🖥️ UI 与调试（本次更新要点）
+
+- 子阶段驱动的按钮集合：
+  - `awaitHoldChoice` 显示：“释放滞留 / 丢弃滞留 / 抽卡”。
+  - `awaitAction` 显示：“结算 / 滞留 / 丢弃”。
+  - 其余阶段不显示会误导的操作，避免无效点击。
+- 调试日志增强：
+  - 每次子阶段变更都会记录一条 `子阶段: from -> to`，便于定位流程问题。
+- 重置对决体验：
+  - 点击“重置对决”后，会自动从 `turnStart` 推进到 `awaitHoldChoice`，无需手动多一步。
+- AI 自动操作开关：
+  - 顶栏新增“允许 AI 自动操作”开关。开启后，AI 在自己的回合按照与玩家一致的子阶段流程进行随机决策（释放滞留/抽卡/对 activeCard 结算/滞留/丢弃），用于便捷调试。
+
+## 🔧 引擎 API 变化（面向前端的重要差异）
+
+- `ensurePhase(state, phase, subPhase?)`：第三个参数可用于校验子阶段，不匹配返回错误结果。
+- `advanceSubPhase(state)`：推进一个子阶段（例如将 `awaitHoldChoice` 推进到 `drawingCard`）。
+- `beginNextPlayerTurn(state)`：处于 `nextPlayerTurnStart` 时切换玩家；处于 `turnStart` 时推进到 `awaitHoldChoice`。
+- `finishPlayerTurn(state)`：推进到 `turnEnd` 并在此处做整轮结束判断；若未结束则进入 `nextPlayerTurnStart`（随后由 UI 调用 `beginNextPlayerTurn`）。
+- `releaseHoldCard(state)` / `discardHoldCard(state)`：在 `awaitHoldChoice` 下进入对应处理子阶段，完成后回到 `awaitHoldChoice`。
+- `playActiveCard` / `stashActiveCard` / `discardActiveCard`：在 `awaitAction` 下对当前抽到的卡进行操作。
+
+### 关卡级 API（新增）
+
+- `ensureLevelPhase(state, phase)`：校验关卡阶段。
+- `advanceLevelPhase(state)`：自动推进一个关卡阶段（只含主线节点）。
+- `beginLevel(state)`：根据 `levels.ts` 构建当前层卡堆、公开信息，并切入 `playerTurn`。
+- `finishRound(state)`：当 subPhase 判定“整轮结束”时调用，将 `levelPhase` 切到 `levelEnd`。
+- `finishLevelAndJudge(state)`：执行分数与胜场判定，可能进入 `gameOver` 或 `merchant/prepareNextLevel`。
+- `skipMerchant(state)` / `acceptMerchantOffer(index)`：半层事件中的交互（沿用原有 API）。
 
 ## 🛠️ 技术实现规划
 
@@ -182,6 +295,7 @@ flowchart TB
 ## 🚀 开发里程碑
 
 - [x] 设计文档与目录规划
+- [x] 关卡级状态机文档与 API 约定（本次更新）
 - [ ] 核心引擎函数
 - [ ] UI 组件与交互
 - [ ] 旅行商人事件
@@ -259,20 +373,38 @@ flowchart TB
     - **多玩家支持**: 游戏状态中的玩家应为数组结构（`players: []`），以支持多人对战。操作面板根据当前行动玩家动态更新。
     - **共享卡池**: 所有玩家共用同一个抽牌堆和弃牌堆。
     - **回合阶段定义**:
-      1. **回合开始阶段 (Turn Start)**: 触发当前玩家身上所有 Buff 的 `onTurnStart` 效果。
-      2. **滞留卡使用阶段 (Hold Phase)**: 玩家可选择使用任意数量的滞留卡。若无滞留卡，则跳过此阶段。
-      3. **抽卡与行动阶段 (Draw & Action Phase)**:
+  1. **回合开始阶段 (Turn Start)**: 触发当前玩家身上所有 Buff 的 `onTurnStart` 效果。
+  1. **滞留卡使用阶段 (Hold Phase)**: 玩家可选择使用任意数量的滞留卡。若无滞留卡，则跳过此阶段。
+  1. **抽卡与行动阶段 (Draw & Action Phase)**:
         - 玩家执行抽卡。若无抽卡次数，则跳过此阶段并给出提示。
         - 对抽到的卡，玩家可选择 **使用**、**滞留** 或 **丢弃**。选择 **滞留** 将直接结束当前玩家的行动。
-      4. **回合结束阶段 (Turn End)**: 触发当前玩家身上所有 Buff 的 `onTurnEnd` 效果，随后轮到下一位玩家。
+  1. **回合结束阶段 (Turn End)**: 触发当前玩家身上所有 Buff 的 `onTurnEnd` 效果，随后轮到下一位玩家。
 
-  2. **Buff 效果扩展**
+  1. **Buff 效果扩展**
     - **阶段触发器**: 为 Buff 的数据结构（Interface）增加 `onTurnStart` 和 `onTurnEnd` 等回调函数字段，用于在回合不同阶段自动触发效果。
     - **数值修饰器**: 为 Buff 增加数值处理函数字段，用于在卡牌结算时动态修改效果数值。例如：
       - **基础值修改**: `(value) => value + 5`（如：每次得分额外+5）
       - **倍率修改**: `(multiplier) => multiplier * 2`（如：得分翻倍）
 
 ## COPILOT 开发记录与上下文（用于后续迭代）
+
+### 第五期迭代（2025-10-17）
+
+1. 文档与上下文
+
+- 新增“Level Phase 状态机”与“关卡级 API”章节，定义 `GameState.levelPhase` 及其流转：`levelStart → playerTurn → levelEnd → finishLevel → (merchant|prepareNextLevel) → levelStart | gameOver`。
+- 对齐主流程 Mermaid 图节点文案，显式标注 `merchant` 与 `prepareNextLevel`。
+- 与 subPhase 的 `ensure/advance` 模式保持一致，便于前端与 AI 复用驱动方式。
+
+1. 后续落地（计划）
+
+- 在 `engine.ts` 实装 `ensureLevelPhase/advanceLevelPhase/beginLevel/finishLevelAndJudge/maybeMerchant/prepareNextLevel`。
+- 在回合收尾处（`finishPlayerTurn` 的整轮结束分支）调用 `finishRound → levelEnd → finishLevelAndJudge`。
+- `App.tsx` 根据 `state.levelPhase` 切换展示：玩家回合、结算动画、商人弹窗、下一层准备。
+
+1. 兼容性
+
+- 保留现有 `GameState.phase`（`'playerTurn' | 'finishRound' | 'merchant' | 'matchEnd'`）以平滑迁移；UI 可优先读取 `levelPhase`，回退到 `phase`。
 
 ### 第四期迭代（2025-10-16）
 

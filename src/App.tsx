@@ -10,18 +10,18 @@ import {
   discardActiveCard,
   drawCard,
   finishPlayerTurn,
+  finishLevel,
   ensurePhase,
   advanceSubPhase,
+  advanceLevelPhase,
   beginNextPlayerTurn,
   playActiveCard,
   releaseHoldCard,
   skipMerchant,
   stashActiveCard,
-  unpackBackpack,
   discardHoldCard,
 } from "./game/engine";
 import {
-  MAX_HOLD_SLOTS,
   type ActionResult,
   type EngineError,
   type EngineOutcome,
@@ -44,8 +44,28 @@ const App: React.FC = () => {
   const [autoAI, setAutoAI] = useState(false);
   // 启动时将 turnStart 推进到 awaitHoldChoice
   useEffect(() => {
-    setGameState((s) => beginNextPlayerTurn(s));
+    setGameState((s) => beginNextPlayerTurn(advanceLevelPhase(s)));
   }, []);
+
+  // Level Phase：当处于 levelStart 时，自动进入玩家回合（playerTurn -> turnStart -> awaitHoldChoice）
+  useEffect(() => {
+    if (gameState.phase === "levelStart") {
+      setGameState((s) => beginNextPlayerTurn(advanceLevelPhase(s)));
+    }
+  }, [gameState.phase]);
+
+  // Level Phase：当进入 finishRound 或 finishLevel，自动推进层结算与层切换
+  useEffect(() => {
+    if (gameState.phase === "finishRound") {
+      setGameState((s) => finishLevel(s));
+    }
+  }, [gameState.phase]);
+
+  useEffect(() => {
+    if (gameState.phase === "finishLevel") {
+      setGameState((s) => finishLevel(s));
+    }
+  }, [gameState.phase]);
 
   // 简易随机 AI（开关控制）：
   useEffect(() => {
@@ -56,7 +76,11 @@ const App: React.FC = () => {
 
     // awaitHoldChoice：优先随机释放滞留，否则抽卡
     if (gameState.subPhase === "awaitHoldChoice") {
-      if ((current.holdSlots?.length ?? 0) > 0 && Math.random() < 0.5 && !gameState.activeCard) {
+      if (
+        (current.holdSlots?.length ?? 0) > 0 &&
+        Math.random() < 0.5 &&
+        !gameState.activeCard
+      ) {
         const res = releaseHoldCard(gameState);
         if (!isEngineError(res)) setGameState(res.state);
         return;
@@ -77,7 +101,11 @@ const App: React.FC = () => {
       if (r < 0.33) res = playActiveCard(gameState);
       else if (r < 0.66) res = stashActiveCard(gameState);
       else res = discardActiveCard(gameState);
-      if (!isEngineError(res)) setGameState(finishPlayerTurn(res.state));
+      if (!isEngineError(res)) {
+        const endState = finishPlayerTurn(res.state);
+        const started = beginNextPlayerTurn(endState);
+        setGameState(started);
+      }
     }
   }, [autoAI, gameState]);
 
@@ -125,16 +153,15 @@ const App: React.FC = () => {
     []
   );
 
+  // 抽卡（awaitHoldChoice -> drawingCard -> awaitAction）
   const handleDraw = () => {
-    // 仅允许在 awaitHoldChoice 阶段开始抽卡
     const phaseCheck = ensurePhase(gameState, "playerTurn", "awaitHoldChoice");
     if (phaseCheck) {
       setStatusMessage(phaseCheck.message);
       return;
     }
-    const drawingState = advanceSubPhase(gameState); // awaitHoldChoice -> drawingCard
+    const drawingState = advanceSubPhase(gameState);
     const result = drawCard(drawingState);
-
     if (!isEngineError(result) && result.appliedCard) {
       registerAnimation({
         type: "draw",
@@ -145,9 +172,10 @@ const App: React.FC = () => {
     handleOutcome(result);
   };
 
+  // 结算当前卡（awaitAction）
   const handlePlay = () => {
     const activeCard = gameState.activeCard;
-  const result = playActiveCard(gameState);
+    const result = playActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "play",
@@ -155,7 +183,6 @@ const App: React.FC = () => {
         timestamp: Date.now(),
       });
     }
-    // 行动完成后推进到回合结束阶段，再开始下一位
     if (!isEngineError(result)) {
       const endState = finishPlayerTurn(result.state);
       handleOutcome({ ...result, state: endState });
@@ -164,9 +191,10 @@ const App: React.FC = () => {
     }
   };
 
+  // 滞留当前卡（awaitAction）
   const handleStash = () => {
     const activeCard = gameState.activeCard;
-  const result = stashActiveCard(gameState);
+    const result = stashActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "stash",
@@ -184,7 +212,7 @@ const App: React.FC = () => {
 
   const handleDiscard = () => {
     const activeCard = gameState.activeCard;
-  const result = discardActiveCard(gameState);
+    const result = discardActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "discard",
@@ -205,7 +233,7 @@ const App: React.FC = () => {
       gameState.players?.[gameState.currentPlayerIndex] ??
       gameState.players?.[0];
     const holdCard = current?.holdSlots?.[0];
-  const result = releaseHoldCard(gameState);
+    const result = releaseHoldCard(gameState);
     if (!isEngineError(result) && holdCard) {
       registerAnimation({
         type: "release",
@@ -214,11 +242,6 @@ const App: React.FC = () => {
       });
     }
     handleOutcome(result);
-  };
-
-  const handleUnpack = (index: number) => {
-    const result = unpackBackpack(gameState, index);
-    handleGameStateUpdate(result);
   };
 
   const handleEndTurn = () => {
@@ -240,7 +263,9 @@ const App: React.FC = () => {
   };
 
   const handleReset = () => {
-    setGameState(createInitialState());
+    const s = createInitialState();
+    const started = beginNextPlayerTurn(advanceLevelPhase(s));
+    setGameState(started);
     setStatusMessage("已重置对决。");
   };
 
@@ -250,10 +275,12 @@ const App: React.FC = () => {
   const holdSlots = currentPlayer?.holdSlots ?? [];
   const activeCard = gameState.activeCard;
   const canPlay = Boolean(activeCard);
-  const canStash = Boolean(activeCard) && holdSlots.length < MAX_HOLD_SLOTS;
+  const canStash = Boolean(activeCard) && holdSlots.length < currentPlayer.MAX_HOLD_SLOTS;
   const canDiscard = Boolean(activeCard);
   const drawDisabled =
-    !isPlayerTurn || gameState.subPhase !== "awaitHoldChoice" || Boolean(activeCard);
+    !isPlayerTurn ||
+    gameState.subPhase !== "awaitHoldChoice" ||
+    Boolean(activeCard);
   const playDisabled =
     !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canPlay;
   const stashDisabled =
@@ -261,8 +288,11 @@ const App: React.FC = () => {
   const discardDisabled =
     !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canDiscard;
   const releaseDisabled =
-    !isPlayerTurn || gameState.subPhase !== "awaitHoldChoice" || holdSlots.length === 0 || Boolean(activeCard);
-  const endTurnDisabled = !isPlayerTurn || gameState.subPhase !== "awaitAction" || Boolean(activeCard);
+    !isPlayerTurn ||
+    gameState.subPhase !== "awaitHoldChoice" ||
+    holdSlots.length === 0 ||
+    Boolean(activeCard);
+  const endTurnDisabled = !isPlayerTurn;
   const noActionsAvailable =
     isPlayerTurn &&
     drawDisabled &&
@@ -293,6 +323,13 @@ const App: React.FC = () => {
     if (gameState.subPhase === "awaitHoldChoice") {
       return [
         {
+          key: "draw",
+          label: drawButtonLabel,
+          onClick: handleDraw,
+          disabled: drawDisabled || drawsRemaining <= 0,
+          tooltip: "从牌堆抽取一张卡牌。",
+        },
+        {
           key: "release",
           label: "释放滞留",
           onClick: handleReleaseHold,
@@ -307,15 +344,10 @@ const App: React.FC = () => {
             handleOutcome(res);
           },
           disabled:
-            !isPlayerTurn || (holdSlots?.length ?? 0) === 0 || Boolean(activeCard),
+            !isPlayerTurn ||
+            (holdSlots?.length ?? 0) === 0 ||
+            Boolean(activeCard),
           tooltip: "丢弃滞留位顶部的卡牌。",
-        },
-        {
-          key: "draw",
-          label: drawButtonLabel,
-          onClick: handleDraw,
-          disabled: drawDisabled || drawsRemaining <= 0,
-          tooltip: "从牌堆抽取一张卡牌。",
         },
       ];
     }
@@ -343,7 +375,23 @@ const App: React.FC = () => {
         tooltip: "放弃这张卡牌并置入弃牌堆。",
       },
     ];
-  }, [gameState.subPhase, releaseDisabled, isPlayerTurn, holdSlots?.length, activeCard, drawButtonLabel, handleDraw, drawDisabled, drawsRemaining, playDisabled, handlePlay, stashDisabled, handleStash, discardDisabled, handleDiscard]);
+  }, [
+    gameState.subPhase,
+    releaseDisabled,
+    isPlayerTurn,
+    holdSlots?.length,
+    activeCard,
+    drawButtonLabel,
+    handleDraw,
+    drawDisabled,
+    drawsRemaining,
+    playDisabled,
+    handlePlay,
+    stashDisabled,
+    handleStash,
+    discardDisabled,
+    handleDiscard,
+  ]);
 
   const endTurnButtonClasses = ["btn", "btn--accent"];
   if (noActionsAvailable) {
@@ -407,7 +455,6 @@ const App: React.FC = () => {
                 player={player}
                 isCurrent={gameState.currentPlayerIndex === idx && isPlayerTurn}
                 isHuman={idx === 0}
-                onUnpackBackpack={idx === 0 ? handleUnpack : undefined}
               />
             ))}
           </Space>
@@ -437,7 +484,7 @@ const App: React.FC = () => {
               })}
               <div className="action-panel__button">
                 <Tooltip
-                  title="当其他操作全部完成后，请结束你的回合。"
+                  title="直接结束你的回合(有卡未处理自动丢弃)"
                   placement="top"
                 >
                   <button

@@ -78,9 +78,18 @@ export interface PlayerState {
   pendingEffects: PendingEffect[];
   buffs: PlayerBuff[];
   isAI?: boolean;
+  MAX_HOLD_SLOTS: number;
 }
 
-export type GamePhase = "playerTurn" | "finishRound" | "merchant" | "matchEnd";
+// 顶层阶段（Level Phase）
+// levelStart -> playerTurn -> finishRound(levelEnd) -> finishLevel -> merchant/next level -> ... -> matchEnd
+export type GamePhase =
+  | "levelStart"
+  | "playerTurn"
+  | "finishRound" // 等价于 levelEnd：整轮已结束，等待结算
+  | "finishLevel" // 层级结算中（可用于异步动画）
+  | "merchant"
+  | "matchEnd";
 
 export type MerchantCostType =
   | "scorePenalty"
@@ -198,9 +207,12 @@ export interface GameState {
     | "awaitHoldChoice"
     | "drawingCard"
     | "awaitAction"
+    | "playingCard"
+    | "stashingCard"
+    | "discardingCard"
     | "turnEnd"
     | "nextPlayerTurnStart"
-    | "playingHoldCard"
+    | "releaselingHoldCard"
     | "discardingHoldCard"
     | "awaitMerchantSelection";
   rngSeed: number;
@@ -254,4 +266,4 @@ export const DEFAULT_MAX_DRAWS = 3;
 export const PLAYER_LABEL: PlayerState["label"] = "Player";
 export const AI_LABEL: PlayerState["label"] = "AI";
 
-export const MAX_HOLD_SLOTS = 2;
+export const DEFAULT_MAX_HOLD_SLOTS = 2;
