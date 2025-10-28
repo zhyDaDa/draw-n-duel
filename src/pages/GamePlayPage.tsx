@@ -74,8 +74,9 @@ const GamePlayPage: React.FC = () => {
   const [animationEvent, setAnimationEvent] =
     useState<CardLaneAnimationEvent | null>(null);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [autoAI, setAutoAI] = useState(false);
+  const [autoAI, setAutoAI] = useState(true);
   const aiRunningRef = useRef(false);
+    const [aiBusy, setAiBusy] = useState(false);
   const [showLevelResult, setShowLevelResult] = useState(false);
   const [showPhaseIntro, setShowPhaseIntro] = useState(false);
   const phaseIntroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -128,6 +129,14 @@ const GamePlayPage: React.FC = () => {
       await new Promise((r) => setTimeout(r, ms));
 
     const randomDelay = () => 1000 + Math.floor(Math.random() * 500);
+    const waitRandom = () => runWithDelay(randomDelay());
+
+    const performAiOperation = async (operation: () => boolean) => {
+      await waitRandom();
+      const succeeded = operation();
+      await waitRandom();
+      return succeeded;
+    };
 
     const getDrawsRemaining = (s: GameState) => {
       const p = s.players[s.currentPlayerIndex];
@@ -136,12 +145,15 @@ const GamePlayPage: React.FC = () => {
 
     const runAiTurn = async () => {
       if (aiRunningRef.current) return;
+
+      let s = gameState;
+      if (s.phase !== "playerTurn") return;
+      const me = s.players[s.currentPlayerIndex];
+      if (!me?.isAI) return;
+
       aiRunningRef.current = true;
+      setAiBusy(true);
       try {
-        let s = gameState;
-        if (s.phase !== "playerTurn") return;
-        const me = s.players[s.currentPlayerIndex];
-        if (!me?.isAI) return;
 
         if (
           s.subPhase === "nextPlayerTurnStart" ||
@@ -163,12 +175,15 @@ const GamePlayPage: React.FC = () => {
             ai.score < opponent.score &&
             !s.activeCard
           ) {
-            const res = releaseHoldCard(s);
-            if (!isEngineError(res)) {
-              s = res.state;
-              setGameState(s);
-              await runWithDelay(randomDelay());
-            }
+            await performAiOperation(() => {
+              const res = releaseHoldCard(s);
+              if (!isEngineError(res)) {
+                s = res.state;
+                setGameState(s);
+                return true;
+              }
+              return false;
+            });
           }
 
           const drawsRemaining = getDrawsRemaining(s);
@@ -176,18 +191,25 @@ const GamePlayPage: React.FC = () => {
           if (canDraw && s.subPhase === "awaitHoldChoice" && !s.activeCard) {
             const check = ensurePhase(s, "playerTurn", "awaitHoldChoice");
             if (!check) {
-              const s1 = advanceSubPhase(s);
-              const res = drawCard(s1);
-              if (!isEngineError(res)) {
-                s = res.state;
-                setGameState(s);
-                await runWithDelay(randomDelay());
-              }
+              await performAiOperation(() => {
+                const s1 = advanceSubPhase(s);
+                const res = drawCard(s1);
+                if (!isEngineError(res)) {
+                  s = res.state;
+                  setGameState(s);
+                  return true;
+                }
+                return false;
+              });
             }
           } else if (!s.activeCard) {
-            const endState = finishPlayerTurn(s);
-            const started = beginNextPlayerTurn(endState);
-            setGameState(started);
+            await performAiOperation(() => {
+              const endState = finishPlayerTurn(s);
+              const started = beginNextPlayerTurn(endState);
+              s = started;
+              setGameState(started);
+              return true;
+            });
             return;
           }
         }
@@ -234,29 +256,41 @@ const GamePlayPage: React.FC = () => {
             }
           };
           const decision = decide();
-          let res: EngineOutcome<ActionResult>;
-          if (
-            decision === "hold" &&
-            (aiNow.holdSlots?.length ?? 0) < aiNow.MAX_HOLD_SLOTS
-          ) {
-            res = stashActiveCard(s);
-          } else if (decision === "hold") {
-            res = discardActiveCard(s);
-          } else {
-            res = playActiveCard(s);
-          }
-          if (!isEngineError(res)) {
-            s = res.state;
-            setGameState(s);
-            await runWithDelay(randomDelay());
+          let actionSucceeded = false;
+          await performAiOperation(() => {
+            let res: EngineOutcome<ActionResult>;
+            if (
+              decision === "hold" &&
+              (aiNow.holdSlots?.length ?? 0) < aiNow.MAX_HOLD_SLOTS
+            ) {
+              res = stashActiveCard(s);
+            } else if (decision === "hold") {
+              res = discardActiveCard(s);
+            } else {
+              res = playActiveCard(s);
+            }
+            if (!isEngineError(res)) {
+              s = res.state;
+              setGameState(s);
+              actionSucceeded = true;
+              return true;
+            }
+            return false;
+          });
 
-            const endState = finishPlayerTurn(s);
-            const started = beginNextPlayerTurn(endState);
-            setGameState(started);
+          if (actionSucceeded) {
+            await performAiOperation(() => {
+              const endState = finishPlayerTurn(s);
+              const started = beginNextPlayerTurn(endState);
+              s = started;
+              setGameState(started);
+              return true;
+            });
           }
         }
       } finally {
         aiRunningRef.current = false;
+        setAiBusy(false);
       }
     };
 
@@ -315,6 +349,7 @@ const GamePlayPage: React.FC = () => {
   );
 
   const handleDraw = () => {
+    if (aiBusy) return;
     const phaseCheck = ensurePhase(gameState, "playerTurn", "awaitHoldChoice");
     if (phaseCheck) {
       setStatusMessage(phaseCheck.message);
@@ -333,6 +368,7 @@ const GamePlayPage: React.FC = () => {
   };
 
   const handlePlay = () => {
+    if (aiBusy) return;
     const activeCard = gameState.activeCard;
     const result = playActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
@@ -351,6 +387,7 @@ const GamePlayPage: React.FC = () => {
   };
 
   const handleStash = () => {
+    if (aiBusy) return;
     const activeCard = gameState.activeCard;
     const result = stashActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
@@ -369,6 +406,7 @@ const GamePlayPage: React.FC = () => {
   };
 
   const handleDiscard = () => {
+    if (aiBusy) return;
     const activeCard = gameState.activeCard;
     const result = discardActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
@@ -387,6 +425,7 @@ const GamePlayPage: React.FC = () => {
   };
 
   const handleReleaseHold = () => {
+    if (aiBusy) return;
     const current =
       gameState.players?.[gameState.currentPlayerIndex] ??
       gameState.players?.[0];
@@ -403,6 +442,7 @@ const GamePlayPage: React.FC = () => {
   };
 
   const handleEndTurn = () => {
+    if (aiBusy) return;
     const endState = finishPlayerTurn(gameState);
     const started = beginNextPlayerTurn(endState);
     setGameState(started);
@@ -443,19 +483,21 @@ const GamePlayPage: React.FC = () => {
   const drawDisabled =
     !isPlayerTurn ||
     gameState.subPhase !== "awaitHoldChoice" ||
-    Boolean(activeCard);
+    Boolean(activeCard) ||
+    aiBusy;
   const playDisabled =
-    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canPlay;
+    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canPlay || aiBusy;
   const stashDisabled =
-    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canStash;
+    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canStash || aiBusy;
   const discardDisabled =
-    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canDiscard;
+    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canDiscard || aiBusy;
   const releaseDisabled =
     !isPlayerTurn ||
     gameState.subPhase !== "awaitHoldChoice" ||
     holdSlots.length === 0 ||
-    Boolean(activeCard);
-  const endTurnDisabled = !isPlayerTurn;
+    Boolean(activeCard) ||
+    aiBusy;
+  const endTurnDisabled = !isPlayerTurn || aiBusy;
   const noActionsAvailable =
     isPlayerTurn &&
     drawDisabled &&
@@ -508,13 +550,15 @@ const GamePlayPage: React.FC = () => {
           key: "discard-hold",
           label: "丢弃滞留",
           onClick: () => {
+                if (aiBusy) return;
             const res = discardHoldCard(gameState);
             handleOutcome(res);
           },
           disabled:
             !isPlayerTurn ||
             (holdSlots?.length ?? 0) === 0 ||
-            Boolean(activeCard),
+                Boolean(activeCard) ||
+                aiBusy,
           tooltip: "丢弃滞留位顶部的卡牌。",
         },
       ];
@@ -559,6 +603,7 @@ const GamePlayPage: React.FC = () => {
     discardDisabled,
     handleDiscard,
     gameState,
+    aiBusy,
   ]);
 
   const endTurnButtonClasses = ["btn", "btn--accent"];
