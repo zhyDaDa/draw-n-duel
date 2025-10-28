@@ -757,6 +757,25 @@
 .level-result-modal .ant-modal-content {
   border-radius: 16px;
 }
+/* custom close button wrapper for LevelResultModal */
+.level-result__close-wrap {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 20;
+}
+.level-result__close-btn {
+  border: none;
+  background: transparent;
+  color: #374151;
+  font-size: 1.05rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.level-result__close-btn:hover {
+  background: rgba(15, 23, 42, 0.06);
+}
 .level-result {
   padding: 0.5rem 0.5rem 0.25rem;
 }

@@ -52,9 +52,6 @@ const App: React.FC = () => {
   const [showLevelResult, setShowLevelResult] = useState(false);
   const [showPhaseIntro, setShowPhaseIntro] = useState(false);
   const phaseIntroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const levelResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
   // 启动时将 turnStart 推进到 awaitHoldChoice
   useEffect(() => {
     // 进入开场的 levelStart 引导动画（~1s），结束后再推进到玩家回合
@@ -87,14 +84,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (gameState.phase === "finishLevel") {
-      // 弹出结算动画，2~3秒后自动关闭并进入下一阶段
+      // 弹出结算动画，由 LevelResultModal 控制何时关闭并触发 finishLevel
       setShowLevelResult(true);
-      if (levelResultTimerRef.current)
-        clearTimeout(levelResultTimerRef.current);
-      levelResultTimerRef.current = setTimeout(() => {
-        setShowLevelResult(false);
-        setGameState((s) => finishLevel(s));
-      }, 2400);
     }
   }, [gameState.phase]);
 
@@ -297,9 +288,6 @@ const App: React.FC = () => {
       }
       if (phaseIntroTimerRef.current) {
         clearTimeout(phaseIntroTimerRef.current);
-      }
-      if (levelResultTimerRef.current) {
-        clearTimeout(levelResultTimerRef.current);
       }
     },
     []
@@ -686,7 +674,11 @@ const App: React.FC = () => {
         open={showLevelResult}
         players={gameState.players}
         level={gameState.level}
-        onClose={() => setShowLevelResult(false)}
+        onClose={() => {
+          // 关闭 Modal 并推进到下一层结算
+          setShowLevelResult(false);
+          setGameState((s) => finishLevel(s));
+        }}
       />
       <PhaseIntroModal
         open={showPhaseIntro}
