@@ -53,6 +53,7 @@ export interface CardInstance {
 }
 
 export interface DeckState {
+  originalDeckSize: number;
   drawPile: CardInstance[];
   discardPile: CardInstance[];
   publicInfo: {
@@ -180,6 +181,7 @@ export interface LevelConfig {
   name: string;
   baseMaxDraws: number;
   extraDrawProbability: number;
+  deckSize: number;
   rareBonusWeight: number;
   specialInjections: string[];
 }

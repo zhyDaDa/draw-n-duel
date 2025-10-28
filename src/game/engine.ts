@@ -63,6 +63,7 @@ const cloneState = (state: GameState): GameState => ({
   ...state,
   players: state.players.map(clonePlayer),
   deck: {
+    originalDeckSize: state.deck.originalDeckSize,
     drawPile: [...state.deck.drawPile],
     discardPile: [...state.deck.discardPile],
     publicInfo: { ...state.deck.publicInfo },
@@ -321,7 +322,6 @@ export const createInitialState = (
   const rng = createSeededRng(initialSeed);
   const level = 1;
   const levelConfig = getLevelConfig(level);
-  const deck = buildDeckForLevel(level, () => rng.next());
 
   const players: PlayerState[] = playerLabels.map((label) => ({
     label,
@@ -342,6 +342,7 @@ export const createInitialState = (
     isAI: label === AI_LABEL,
     MAX_HOLD_SLOTS: DEFAULT_MAX_HOLD_SLOTS,
   }));
+  const deck = buildDeckForLevel(players, level, () => rng.next());
 
   const initial: GameState = {
     phase: "levelStart",
@@ -919,7 +920,7 @@ const prepareNextLevel = (state: GameState): void => {
   }
 
   const rng = createSeededRng(state.rngSeed);
-  const deck = buildDeckForLevel(state.level, () => rng.next());
+  const deck = buildDeckForLevel(state.players, state.level, () => rng.next());
   state.rngSeed = rng.getSeed();
   state.deck = deck;
 

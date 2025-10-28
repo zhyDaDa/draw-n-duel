@@ -13,8 +13,15 @@ interface LevelResultModalProps {
 const DURATION_MS = 2000; // 2s
 const TICK_MS = 32;
 
-const LevelResultModal: React.FC<LevelResultModalProps> = ({ open, level, players, onClose }) => {
-  const [animatedScores, setAnimatedScores] = useState<number[]>(players.map(() => 0));
+const LevelResultModal: React.FC<LevelResultModalProps> = ({
+  open,
+  level,
+  players,
+  onClose,
+}) => {
+  const [animatedScores, setAnimatedScores] = useState<number[]>(
+    players.map(() => 0)
+  );
   const targetScoresRef = useRef<number[]>([]);
 
   useEffect(() => {
@@ -27,7 +34,9 @@ const LevelResultModal: React.FC<LevelResultModalProps> = ({ open, level, player
     const timer = setInterval(() => {
       frame += 1;
       const ratio = Math.min(1, frame / steps);
-      setAnimatedScores(targetScoresRef.current.map((t) => Math.round(t * ratio)));
+      setAnimatedScores(
+        targetScoresRef.current.map((t) => Math.round(t * ratio))
+      );
       if (ratio >= 1) {
         clearInterval(timer);
       }
@@ -58,16 +67,29 @@ const LevelResultModal: React.FC<LevelResultModalProps> = ({ open, level, player
         <div className="level-result__rows">
           {players.map((p, idx) => {
             const displayed = animatedScores[idx] ?? 0;
-            const percent = Math.min(100, (p.score === 0 ? 0 : (displayed / Math.max(1, p.score)) * 100));
+            const percent = Math.min(
+              100,
+              p.score === 0 ? 0 : (displayed / Math.max(1, p.score)) * 100
+            );
             const rank = ranks.get(idx) ?? 0;
             return (
               <div key={p.label + idx} className="level-result__row">
                 <div className="level-result__label">
-                  <span className="level-result__name">{p.label === "Player" ? "玩家" : p.label}</span>
-                  <span className={`level-result__rank level-result__rank--r${rank}`}>#{rank}</span>
+                  <span className="level-result__name">
+                    {p.label === "Player" ? "玩家" : p.label}
+                  </span>
+                  <span
+                    className={`level-result__rank level-result__rank--r${rank}`}
+                  >
+                    #{rank}
+                  </span>
                 </div>
                 <div className="level-result__bar">
-                  <Progress percent={percent} showInfo={false} strokeColor={rank === 1 ? "#22c55e" : "#6366f1"} />
+                  <Progress
+                    percent={percent}
+                    showInfo={false}
+                    strokeColor={rank === 1 ? "#22c55e" : "#6366f1"}
+                  />
                 </div>
                 <div className="level-result__score">{displayed}</div>
               </div>

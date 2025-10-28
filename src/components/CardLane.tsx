@@ -19,6 +19,7 @@ export interface CardLaneAnimationEvent {
 }
 
 interface CardLaneProps {
+  deckStats: CardDeckStats;
   deckRemaining: number;
   activeCard?: CardInstance;
   holdSlots: CardInstance[];
@@ -58,6 +59,24 @@ const renderTooltip = (card: CardInstance): ReactNode => (
   </div>
 );
 
+export interface CardDeckStats {
+  total: number;
+  remaining: number;
+  remaining_rare: number;
+  remaining_shard: number;
+}
+const renderDeckTooltip = (stats: CardDeckStats): ReactNode => (
+  <div className="card-chip__tooltip tooltip-light__panel">
+    <header>
+      <strong>牌堆情况</strong>
+    </header>
+    <p>总数: {stats.total}</p>
+    <p>剩余: {stats.remaining}</p>
+    <p>稀有: {stats.remaining_rare}</p>
+    <p>碎片: {stats.remaining_shard}</p>
+  </div>
+);
+
 const renderCard = (
   card: CardInstance,
   options: {
@@ -69,7 +88,7 @@ const renderCard = (
     <Tooltip
       title={renderTooltip(card)}
       placement="top"
-      overlayClassName="tooltip-light"
+      className="tooltip-light"
     >
       <div className={`card-slot__card ${extraClass}`}>
         <CardDisplay card={card} size="sm" />
@@ -79,6 +98,7 @@ const renderCard = (
 };
 
 const CardLane: React.FC<CardLaneProps> = ({
+  deckStats,
   deckRemaining,
   activeCard,
   holdSlots,
@@ -163,9 +183,15 @@ const CardLane: React.FC<CardLaneProps> = ({
   return (
     <section className="card-lane" aria-label="卡牌分区">
       <div className="card-slot card-slot--deck">
-        <div className="card-slot__deck">
-          <span className="card-slot__deck-count">{deckRemaining}</span>
-        </div>
+        <Tooltip
+          title={renderDeckTooltip(deckStats)}
+          placement="top"
+          classNames={{ root: "tooltip-light" }}
+        >
+          <div className="card-slot__deck">
+            <span className="card-slot__deck-count">{deckRemaining}</span>
+          </div>
+        </Tooltip>
         <span className="card-slot__deck-label">牌堆</span>
       </div>
 

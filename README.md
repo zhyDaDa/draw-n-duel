@@ -412,14 +412,21 @@ flowchart TB
 - `src/App.tsx`：AI 异步执行器、结算与阶段开场弹窗时序接入。
 - `src/components/LevelResultModal.tsx`（新增）
 - `src/components/PhaseIntroModal.tsx`（新增）
-- `src/components/AnimatedBuffList.tsx`（新增）
+- `src/components/AnimatedBuf   fList.tsx`（新增）
 - `src/components/BuffDisplay.tsx` / `BuffDisplay.css`：堆叠角标与进出场动效；无阴影。
 - `src/components/PlayerHUD.tsx`：使用 AnimatedBuffList，去除“增益/No Buff”文案，稳定容器高度。
 
 ### 第六期
 
 1. 使用完的buff应当消失, 目前是还在占位置, 只是不显示, 且同类型的buff需要合并
-2. 商人的奖励应当是buff而非卡牌, 开局扣分意义也不大, 现在开始内容设计
+2. 商人的奖励应当是buff而非卡牌, 开局扣分意义也不大, 现在开始内容设计. 
+
+商人奖励设计:
+|Buff/Debuff|效果|稀有度|
+|---|---|---|
+|时间扭曲|下一层每次抽卡额外+1次抽卡|普通|
+|能量护盾|累3个持久盾|普通|
+|胜利碎片|获得1个胜利碎片|普通|
 
 ## COPILOT 开发记录与上下文（用于后续迭代）
 

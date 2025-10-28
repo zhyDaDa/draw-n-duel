@@ -18,7 +18,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
 }) => {
   // 转换现有数据到 Buff 系统
   const buffs: PlayerBuff[] = [];
-  
+
   // 胜利碎片 Buff
   if (player.victoryShards > 0) {
     buffs.push({
@@ -31,7 +31,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       count: player.victoryShards,
     });
   }
-  
+
   // 防御盾 Buff
   if (player.shields > 0) {
     buffs.push({
@@ -44,7 +44,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       count: player.shields,
     });
   }
-  
+
   // 额外抽卡 Buff (临时)
   if (player.extraDraws > 0) {
     buffs.push({
@@ -57,7 +57,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       count: player.extraDraws,
     });
   }
-  
+
   // 层通行证 Buff
   player.passTokens.forEach((token, index) => {
     buffs.push({
@@ -70,7 +70,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       count: 1,
     });
   });
-  
+
   // 商人代币 Buff
   if (player.merchantTokens > 0) {
     buffs.push({
@@ -83,7 +83,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       count: player.merchantTokens,
     });
   }
-  
+
   // 待处理效果 Buff (临时)
   player.pendingEffects.forEach((effect, index) => {
     if (effect.type === "nextDrawPenalty") {

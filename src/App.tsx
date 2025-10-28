@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Flex, Space, Tooltip, Switch } from "antd";
-import CardLane, { type CardLaneAnimationEvent } from "./components/CardLane";
+import CardLane, {
+  type CardDeckStats,
+  type CardLaneAnimationEvent,
+} from "./components/CardLane";
 import MerchantModal from "./components/MerchantModal";
 import PlayerHUD from "./components/PlayerHUD";
 import TurnLog from "./components/TurnLog";
@@ -49,7 +52,9 @@ const App: React.FC = () => {
   const [showLevelResult, setShowLevelResult] = useState(false);
   const [showPhaseIntro, setShowPhaseIntro] = useState(false);
   const phaseIntroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const levelResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const levelResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   // 启动时将 turnStart 推进到 awaitHoldChoice
   useEffect(() => {
     // 进入开场的 levelStart 引导动画（~1s），结束后再推进到玩家回合
@@ -84,7 +89,8 @@ const App: React.FC = () => {
     if (gameState.phase === "finishLevel") {
       // 弹出结算动画，2~3秒后自动关闭并进入下一阶段
       setShowLevelResult(true);
-      if (levelResultTimerRef.current) clearTimeout(levelResultTimerRef.current);
+      if (levelResultTimerRef.current)
+        clearTimeout(levelResultTimerRef.current);
       levelResultTimerRef.current = setTimeout(() => {
         setShowLevelResult(false);
         setGameState((s) => finishLevel(s));
@@ -116,20 +122,29 @@ const App: React.FC = () => {
         if (!me?.isAI) return;
 
         // 若处于 nextPlayerTurnStart/turnStart，推进到 awaitHoldChoice
-        if (s.subPhase === "nextPlayerTurnStart" || s.subPhase === "turnStart" || s.subPhase === undefined) {
+        if (
+          s.subPhase === "nextPlayerTurnStart" ||
+          s.subPhase === "turnStart" ||
+          s.subPhase === undefined
+        ) {
           s = beginNextPlayerTurn(s);
           setGameState(s);
           await runWithDelay(400);
         }
 
         // 循环最多处理一次“抽卡+动作”，或一次“释放滞留”，不足则直接结束回合
-        const opponent = s.players[(s.currentPlayerIndex + 1) % s.players.length];
+        const opponent =
+          s.players[(s.currentPlayerIndex + 1) % s.players.length];
         const ai = s.players[s.currentPlayerIndex];
 
         // awaitHoldChoice 分支
         if (s.subPhase === "awaitHoldChoice") {
           // 若可释放滞留且有利（落后时），先释放
-          if ((ai.holdSlots?.length ?? 0) > 0 && ai.score < opponent.score && !s.activeCard) {
+          if (
+            (ai.holdSlots?.length ?? 0) > 0 &&
+            ai.score < opponent.score &&
+            !s.activeCard
+          ) {
             const res = releaseHoldCard(s);
             if (!isEngineError(res)) {
               s = res.state;
@@ -162,10 +177,15 @@ const App: React.FC = () => {
         }
 
         // awaitAction：对 activeCard 决策
-        if (s.phase === "playerTurn" && s.subPhase === "awaitAction" && s.activeCard) {
+        if (
+          s.phase === "playerTurn" &&
+          s.subPhase === "awaitAction" &&
+          s.activeCard
+        ) {
           const card = s.activeCard;
           const aiNow = s.players[s.currentPlayerIndex];
-          const oppNow = s.players[(s.currentPlayerIndex + 1) % s.players.length];
+          const oppNow =
+            s.players[(s.currentPlayerIndex + 1) % s.players.length];
           // 简单策略（与引擎一致）
           const decide = () => {
             switch (card.effect.type) {
@@ -181,21 +201,30 @@ const App: React.FC = () => {
               case "add":
                 return "play" as const;
               case "reset":
-                return aiNow.score < oppNow.score * 0.6 ? ("play" as const) : ("hold" as const);
+                return aiNow.score < oppNow.score * 0.6
+                  ? ("play" as const)
+                  : ("hold" as const);
               case "transfer":
               case "steal":
                 return "play" as const;
               case "duplicate":
-                return (aiNow.holdSlots?.length ?? 0) > 0 ? ("play" as const) : ("hold" as const);
+                return (aiNow.holdSlots?.length ?? 0) > 0
+                  ? ("play" as const)
+                  : ("hold" as const);
               case "wildcard":
-                return aiNow.score < oppNow.score ? ("play" as const) : ("hold" as const);
+                return aiNow.score < oppNow.score
+                  ? ("play" as const)
+                  : ("hold" as const);
               default:
                 return "play" as const;
             }
           };
           const decision = decide();
           let res: EngineOutcome<ActionResult>;
-          if (decision === "hold" && (aiNow.holdSlots?.length ?? 0) < aiNow.MAX_HOLD_SLOTS) {
+          if (
+            decision === "hold" &&
+            (aiNow.holdSlots?.length ?? 0) < aiNow.MAX_HOLD_SLOTS
+          ) {
             res = stashActiveCard(s);
           } else if (decision === "hold") {
             res = discardActiveCard(s); // 槽满则丢弃
@@ -403,7 +432,8 @@ const App: React.FC = () => {
   const holdSlots = currentPlayer?.holdSlots ?? [];
   const activeCard = gameState.activeCard;
   const canPlay = Boolean(activeCard);
-  const canStash = Boolean(activeCard) && holdSlots.length < currentPlayer.MAX_HOLD_SLOTS;
+  const canStash =
+    Boolean(activeCard) && holdSlots.length < currentPlayer.MAX_HOLD_SLOTS;
   const canDiscard = Boolean(activeCard);
   const drawDisabled =
     !isPlayerTurn ||
@@ -431,7 +461,12 @@ const App: React.FC = () => {
 
   const deckStats = useMemo(
     () =>
-      `卡堆剩余：${gameState.deck.drawPile.length} 张｜稀有剩余 ${gameState.deck.publicInfo.remainingRare}｜碎片 ${gameState.deck.publicInfo.remainingShards}`,
+      ({
+        total: gameState.deck.originalDeckSize,
+        remaining: gameState.deck.drawPile.length,
+        remaining_rare: gameState.deck.publicInfo.remainingRare,
+        remaining_shard: gameState.deck.publicInfo.remainingShards,
+      } as CardDeckStats),
     [
       gameState.deck.drawPile.length,
       gameState.deck.publicInfo.remainingRare,
@@ -544,9 +579,9 @@ const App: React.FC = () => {
                 层级 {gameState.level}｜阶段：{gameState.phase}
               </p>
             </div>
-            <span className="top-bar__chip top-bar__chip--metric">
+            {/* <span className="top-bar__chip top-bar__chip--metric">
               {deckStats}
-            </span>
+            </span> */}
             {statusMessage ? (
               <span className="top-bar__chip top-bar__chip--status">
                 {statusMessage}
@@ -628,6 +663,7 @@ const App: React.FC = () => {
             </div>
 
             <CardLane
+              deckStats={deckStats}
               deckRemaining={gameState.deck.drawPile.length}
               activeCard={activeCard}
               holdSlots={holdSlots}
