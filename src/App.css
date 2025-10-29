@@ -85,11 +85,13 @@
 }
 
 .player-hud {
+  width: 16rem;
   border: 1px solid #e0e7ff;
   border-radius: 12px;
   padding: 1rem;
   background: #ffffff;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  min-width: 0; /* allow flex children to shrink and avoid panel being stretched by overflow */
 }
 
 .player-hud--active {
@@ -879,6 +881,52 @@
   color: #6b7280;
 }
 
+.card-slot__label .card-slot__overflow-indicator {
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(191, 219, 254, 0.85);
+  font-weight: 700;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.card-slot__overflow-tooltip {
+  max-width: 260px;
+  padding: 0.2rem 0;
+}
+
+.card-slot__overflow-item {
+  padding: 0.2rem 0;
+}
+
+.card-slot__overflow-item strong {
+  display: block;
+  font-size: 0.82rem;
+  color: #4338ca;
+  margin-bottom: 0.1rem;
+}
+
+.card-slot__overflow-name {
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.15rem;
+}
+
+.card-slot__overflow-desc {
+  font-size: 0.78rem;
+  color: #4b5563;
+}
+
+.card-slot__overflow-item hr {
+  border: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+  margin: 0.35rem 0 0;
+}
+
 .card-slot__deck {
   width: 150px;
   min-height: 210px;
@@ -1149,4 +1197,35 @@
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
+}
+
+/* 卡槽横向滚动支持：当滞留位超过两个时启用横向滚动，显示宽度为两个卡槽 */
+:root {
+  --card-slot-width: 160px;
+}
+
+.card-slot {
+  min-width: var(--card-slot-width);
+  flex: 0 0 auto;
+}
+
+.card-slot-group--scrollable {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  /* 展示两个卡槽的宽度（含间隙） */
+  max-width: calc(var(--card-slot-width) * 2 + 12px);
+}
+
+/* 滚动条样式（保留滚动能力但不喧宾夺主） */
+.card-slot-group--scrollable::-webkit-scrollbar {
+  height: 8px;
+}
+.card-slot-group--scrollable::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.12);
+  border-radius: 4px;
+}
+.card-slot-group--scrollable {
+  -ms-overflow-style: none;
 }

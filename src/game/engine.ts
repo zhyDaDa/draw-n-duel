@@ -17,6 +17,7 @@ import {
   getLevelConfig,
   nextLevelOrMerchantPhase,
 } from "./levels";
+import { ComplexScore } from "./ComplexScore";
 import {
   AI_LABEL,
   BASE_MATCH_CONFIG,
@@ -30,7 +31,9 @@ import {
   type LevelConfig,
   type MerchantCost,
   type MerchantOffer,
+  type PendingEffect,
   type Rarity,
+  type TargetType,
   type PlayerState,
   type ResolveResult,
 } from "./types";
@@ -52,10 +55,13 @@ const createSeededRng = (seed: number) => {
 
 const clonePlayer = (player: PlayerState): PlayerState => ({
   ...player,
+  score: player.score.clone(),
   holdSlots: player.holdSlots.map((card) => ({ ...card })),
   passTokens: player.passTokens.map((token) => ({ ...token })),
   backpack: player.backpack.map((card) => ({ ...card })),
   pendingEffects: player.pendingEffects.map((effect) => ({ ...effect })),
+  // clone shard counts map
+  victoryShards: { ...(player.victoryShards ?? {}) },
   buffs: player.buffs?.map((buff) => ({ ...buff })) ?? [],
 });
 
@@ -75,6 +81,27 @@ const cloneState = (state: GameState): GameState => ({
   log: [...state.log],
 });
 
+// ---- Shard helpers ----
+const getShardCount = (player: PlayerState, color: string): number =>
+  player.victoryShards?.[color] ?? 0;
+
+const addShardsTo = (
+  player: PlayerState,
+  color: string,
+  count: number = 1
+): number => {
+  if (!player.victoryShards) player.victoryShards = {};
+  const prev = player.victoryShards[color] ?? 0;
+  const next = prev + count;
+  player.victoryShards[color] = next;
+  return next;
+};
+
+const anyShardVictory = (player: PlayerState, threshold: number): boolean => {
+  if (!player.victoryShards) return false;
+  return Object.values(player.victoryShards).some((v) => v >= threshold);
+};
+
 const addCardToHold = (player: PlayerState, card: CardInstance): void => {
   player.holdSlots.unshift(card);
   if (player.holdSlots.length > player.MAX_HOLD_SLOTS) {
@@ -87,6 +114,9 @@ const removeTopHoldCard = (player: PlayerState): CardInstance | undefined =>
 
 const hasHoldCapacity = (player: PlayerState): boolean =>
   player.holdSlots.length < player.MAX_HOLD_SLOTS;
+
+const maxDrawsFor = (player: PlayerState): number =>
+  player.maxDraws + player.extraDraws;
 
 const setCurrentPlayerByIndex = (state: GameState, index: number): void => {
   if (index >= 0 && index < state.players.length) {
@@ -202,8 +232,10 @@ const pickMerchantCost = (rarity: Rarity, rng: () => number): MerchantCost => {
 const applyMerchantCost = (player: PlayerState, cost: MerchantCost): string => {
   switch (cost.type) {
     case "scorePenalty": {
-      player.score = Math.max(0, player.score - cost.value);
-      return `${player.logPrefix} 支付代价：${cost.description}`;
+      player.score.subtractReal(cost.value);
+      return `${player.logPrefix} 支付代价：${
+        cost.description
+      }（当前 ${player.score.toString()}）`;
     }
     case "nextDrawPenalty": {
       player.pendingEffects.push({
@@ -247,10 +279,12 @@ const applyPendingLevelEffects = (
   }
 
   if (startPenalty > 0) {
-    player.score = Math.max(0, player.score - startPenalty);
+    player.score.subtractReal(startPenalty);
     appendLog(
       state,
-      `${player.logPrefix} 的起始分数因代价降低 ${startPenalty}`
+      `${
+        player.logPrefix
+      } 的起始分数因代价降低 ${startPenalty} → ${player.score.toString()}`
     );
   }
 
@@ -265,7 +299,7 @@ const resetPlayerForLevel = (
   player: PlayerState,
   levelConfig: LevelConfig
 ): void => {
-  player.score = 1;
+  player.score.set(1, 0);
   player.drawsUsed = 0;
   player.extraDraws = 0;
   player.maxDraws = levelConfig.baseMaxDraws;
@@ -278,8 +312,7 @@ const consumeCard = (state: GameState): CardInstance | undefined => {
   }
   state.deck.publicInfo.remainingRare -=
     card.rarity === "rare" || card.rarity === "legendary" ? 1 : 0;
-  state.deck.publicInfo.remainingShards -=
-    card.effect.type === "victoryShard" ? 1 : 0;
+  state.deck.publicInfo.remainingShards -= card.tags?.includes("shard") ? 1 : 0;
   return card;
 };
 
@@ -325,13 +358,13 @@ export const createInitialState = (
 
   const players: PlayerState[] = playerLabels.map((label) => ({
     label,
-    score: 1,
+    score: ComplexScore.from(1, 0),
     drawsUsed: 0,
     maxDraws: levelConfig.baseMaxDraws,
     extraDraws: 0,
     holdSlots: [],
     backpack: [],
-    victoryShards: 0,
+    victoryShards: {},
     wins: 0,
     passTokens: [],
     shields: 0,
@@ -448,9 +481,6 @@ export function setSubPhase(
   state.subPhase = subPhase;
 }
 
-const maxDrawsFor = (player: PlayerState): number =>
-  player.maxDraws + player.extraDraws;
-
 const applyExtraDrawNotes = (
   player: PlayerState,
   notes?: string
@@ -478,6 +508,420 @@ const applyNegativeWithShield = (
   return null;
 };
 
+const compareScore = (a: ComplexScore, b: ComplexScore | number): number =>
+  a.compareMagnitude(b);
+
+const parseEffectNotes = (notes?: string): Record<string, string> => {
+  if (!notes) return {};
+  return notes
+    .split("|")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
+    .reduce<Record<string, string>>((acc, segment) => {
+      const [key, ...rest] = segment.split("=");
+      if (rest.length === 0) {
+        acc[key] = "true";
+      } else {
+        acc[key] = rest.join("=");
+      }
+      return acc;
+    }, {});
+};
+
+const resolveEffectTargets = (
+  actor: PlayerState,
+  opponent: PlayerState,
+  target?: TargetType
+): PlayerState[] => {
+  if (target === "opponent") return [opponent];
+  if (target === "both") return [actor, opponent];
+  return [actor];
+};
+
+const executeScriptEffect = (
+  state: GameState,
+  actor: PlayerState,
+  opponent: PlayerState,
+  card: CardInstance
+): string[] => {
+  const scriptId = card.effect.script ?? "";
+  const params = parseEffectNotes(card.effect.notes);
+  const messages: string[] = [];
+
+  const getNumberParam = (key: string, fallback: number): number => {
+    const raw = params[key];
+    if (raw === undefined) return fallback;
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  const logTransition = (
+    target: PlayerState,
+    before: ComplexScore,
+    description: string
+  ) => {
+    messages.push(
+      `${
+        target.logPrefix
+      } ${description}：${before.toString()} → ${target.score.toString()}`
+    );
+  };
+
+  switch (scriptId) {
+    case "math.divide": {
+      const divisorRaw = Math.trunc(card.effect.value ?? 1);
+      const safeDivisor = divisorRaw === 0 ? 1 : Math.abs(divisorRaw);
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const before = target.score.clone();
+        target.score.divideScalar(safeDivisor);
+        logTransition(target, before, `通过 ${card.name} 除以 ${safeDivisor}`);
+      });
+      break;
+    }
+    case "math.power": {
+      const exponent = card.effect.value ?? 2;
+      const cap = getNumberParam("cap", Number.POSITIVE_INFINITY);
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const before = target.score.clone();
+        target.score.power(exponent);
+        if (Number.isFinite(cap) && target.score.modulus() > cap) {
+          target.score.normalizeMagnitude(cap);
+        }
+        logTransition(target, before, `使用 ${card.name} 进行指数运算`);
+      });
+      break;
+    }
+    case "score.set": {
+      const desired = card.effect.value ?? 0;
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const doSet = () => target.score.set(desired, 0);
+        const before = target.score.clone();
+        if (target === opponent && compareScore(opponent.score, desired) > 0) {
+          const feedback = applyNegativeWithShield(opponent, doSet);
+          if (feedback) {
+            messages.push(feedback);
+          } else {
+            logTransition(
+              opponent,
+              before,
+              `被 ${card.name} 强制设置为 ${desired}`
+            );
+          }
+        } else {
+          doSet();
+          logTransition(target, before, `被 ${card.name} 设置为 ${desired}`);
+        }
+      });
+      break;
+    }
+    case "score.invert": {
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const before = target.score.clone();
+        const applyInvert = () => target.score.negate();
+        if (target === opponent) {
+          const feedback = applyNegativeWithShield(opponent, applyInvert);
+          if (feedback) {
+            messages.push(feedback);
+          } else {
+            logTransition(opponent, before, `受到 ${card.name} 的分数反转`);
+          }
+        } else {
+          applyInvert();
+          logTransition(target, before, `触发 ${card.name} 的反转`);
+        }
+      });
+      break;
+    }
+    case "score.percentTransfer": {
+      const percent = Math.max(
+        0,
+        Math.min(100, Math.trunc(card.effect.value ?? 0))
+      );
+      if (percent <= 0) {
+        messages.push(`${card.name} 的数值不足以窃取分数。`);
+        break;
+      }
+      const reductionFactor = 1 - percent / 100;
+      const initial = opponent.score.modulus();
+      if (initial <= 0) {
+        messages.push(`${opponent.logPrefix} 没有可窃取的分数。`);
+        break;
+      }
+      const feedback = applyNegativeWithShield(opponent, () => {
+        opponent.score.scaleMagnitude(reductionFactor);
+      });
+      if (feedback) {
+        messages.push(feedback);
+      } else {
+        const after = opponent.score.modulus();
+        const stolen = initial - after;
+        actor.score.addReal(stolen);
+        messages.push(
+          `${actor.logPrefix} 窃取了 ${percent}% 分数（≈${stolen.toFixed(
+            2
+          )}），当前 ${actor.score.toString()}`
+        );
+      }
+      break;
+    }
+    case "score.floorHalf": {
+      const targetMagnitude = Math.ceil(opponent.score.modulus() / 2);
+      if (compareScore(actor.score, targetMagnitude) >= 0) {
+        messages.push(`${actor.logPrefix} 已达对手一半的模长，无需调整。`);
+      } else {
+        const before = actor.score.clone();
+        actor.score.normalizeMagnitude(targetMagnitude);
+        logTransition(actor, before, `借助 ${card.name} 稳定到对手一半模长`);
+      }
+      break;
+    }
+    case "shard.cost": {
+      const shardCount = Math.max(1, Math.trunc(card.effect.value ?? 1));
+      const color = params.color ?? "未知";
+      messages.push(
+        `${actor.logPrefix} 选择支付代价以获得 ${color} 碎片 x${shardCount}。`
+      );
+      
+      const scorePenalty = Math.max(
+        0,
+        Math.trunc(getNumberParam("scorePenalty", 0))
+      );
+      const nextDrawPenalty = Math.max(
+        0,
+        Math.trunc(getNumberParam("nextDrawPenalty", 0))
+      );
+      const startScorePenalty = Math.max(
+        0,
+        Math.trunc(getNumberParam("startScorePenalty", 0))
+      );
+
+      if (scorePenalty > 0) {
+        actor.score.subtractReal(scorePenalty);
+        messages.push(
+          `${
+            actor.logPrefix
+          } 为获得碎片失去 ${scorePenalty} 分 → ${actor.score.toString()}`
+        );
+      }
+
+      if (nextDrawPenalty > 0) {
+        actor.pendingEffects.push({
+          type: "nextDrawPenalty",
+          value: nextDrawPenalty,
+        });
+        messages.push(`${actor.logPrefix} 下层抽牌次数 -${nextDrawPenalty}。`);
+      }
+
+      if (startScorePenalty > 0) {
+        actor.pendingEffects.push({
+          type: "startScorePenalty",
+          value: startScorePenalty,
+        });
+        messages.push(
+          `${actor.logPrefix} 下一层开局额外扣 ${startScorePenalty} 分。`
+        );
+      }
+
+      // const newCount = addShardsTo(actor, color, shardCount);
+      // messages.push(
+      //   `${actor.logPrefix} 获得了 ${color} 碎片 x${shardCount}（该色共 ${newCount}）。`
+      // );
+      break;
+    }
+    case "shard.tradeDraw": {
+      const shards = Math.max(
+        1,
+        Math.trunc(getNumberParam("shards", card.effect.value ?? 1))
+      );
+      const color = params.color ?? "未知";
+      const remaining = Math.max(0, maxDrawsFor(actor) - actor.drawsUsed);
+      let cost = Math.trunc(card.effect.value ?? -1);
+      if (cost < 0) cost = remaining;
+      cost = Math.min(cost, remaining);
+      if (cost <= 0) {
+        messages.push(`${actor.logPrefix} 没有可放弃的抽牌次数，交易失败。`);
+        break;
+      }
+      actor.drawsUsed += cost;
+      const scorePenalty = Math.max(
+        0,
+        Math.trunc(getNumberParam("scorePenalty", 0))
+      );
+
+      if (scorePenalty > 0) {
+        actor.score.subtractReal(scorePenalty);
+        messages.push(`${actor.logPrefix} 付出代价，失去 ${scorePenalty} 分。`);
+      }
+
+      const newCountT = addShardsTo(actor, color, shards);
+      messages.push(
+        `${actor.logPrefix} 放弃 ${cost} 次抽牌机会，换取 ${color} 碎片 x${shards}（该色共 ${newCountT}）。`
+      );
+      break;
+    }
+    case "shard.threshold": {
+      const threshold = Math.trunc(card.effect.value ?? 10);
+      const shards = Math.max(1, Math.trunc(getNumberParam("shards", 1)));
+      const scorePenalty = Math.max(
+        0,
+        Math.trunc(getNumberParam("scorePenalty", 0))
+      );
+      const color = params.color ?? "未知";
+      if (compareScore(actor.score, threshold) <= 0) {
+        const newCt = addShardsTo(actor, color, shards);
+        messages.push(
+          `${actor.logPrefix} 在模长 ≤ ${threshold} 时获得 ${color} 碎片 x${shards}（该色共 ${newCt}）。`
+        );
+      } else if (scorePenalty > 0) {
+        actor.score.subtractReal(scorePenalty);
+        messages.push(
+          `${
+            actor.logPrefix
+          } 未满足条件，反而失去 ${scorePenalty} 分 → ${actor.score.toString()}`
+        );
+      } else {
+        messages.push(`${actor.logPrefix} 未满足碎片条件，效果落空。`);
+      }
+      break;
+    }
+    case "debuff.drawPenalty": {
+      const targets = resolveEffectTargets(
+        actor,
+        opponent,
+        card.effect.target ?? "opponent"
+      );
+      const penalty = Math.max(1, Math.trunc(card.effect.value ?? 1));
+      targets.forEach((target) => {
+        const pending: PendingEffect = {
+          type: "nextDrawPenalty",
+          value: penalty,
+        };
+        target.pendingEffects.push(pending);
+        messages.push(`${target.logPrefix} 的下一层抽牌次数 -${penalty}。`);
+      });
+      break;
+    }
+    case "hold.boost": {
+      const perCard = Math.trunc(card.effect.value ?? 2);
+      const count = actor.holdSlots.length;
+      if (count === 0) {
+        messages.push(`${actor.logPrefix} 的滞留位为空，增幅未生效。`);
+      } else {
+        const gain = perCard * count;
+        const before = actor.score.clone();
+        actor.score.addReal(gain);
+        logTransition(
+          actor,
+          before,
+          `通过 ${card.name} 获得连击增幅 +${gain}（滞留卡 x${count}）`
+        );
+      }
+      break;
+    }
+    case "hold.burn": {
+      const payout = Math.trunc(card.effect.value ?? 4);
+      let burned = 0;
+      while (actor.holdSlots.length > 0) {
+        const removed = actor.holdSlots.shift();
+        if (!removed) break;
+        state.deck.discardPile.push(removed);
+        burned += 1;
+      }
+      if (burned === 0) {
+        messages.push(`${actor.logPrefix} 没有可释放的滞留卡。`);
+      } else {
+        const gain = burned * payout;
+        const before = actor.score.clone();
+        actor.score.addReal(gain);
+        logTransition(actor, before, `释放滞留连锁获得 ${gain} 分`);
+      }
+      break;
+    }
+    case "hold.expand": {
+      const increment = Math.max(1, Math.trunc(card.effect.value ?? 1));
+      const maxCap = Math.max(
+        actor.MAX_HOLD_SLOTS,
+        Math.trunc(getNumberParam("max", actor.MAX_HOLD_SLOTS + increment))
+      );
+      const newCap = Math.min(actor.MAX_HOLD_SLOTS + increment, maxCap);
+      if (newCap === actor.MAX_HOLD_SLOTS) {
+        messages.push(
+          `${actor.logPrefix} 的滞留容量已达上限，无法进一步扩容。`
+        );
+      } else {
+        actor.MAX_HOLD_SLOTS = newCap;
+        messages.push(`${actor.logPrefix} 的滞留位扩容至 ${newCap} 个槽位。`);
+      }
+      break;
+    }
+    case "defense.steadyBuffer": {
+      const threshold = Math.trunc(card.effect.value ?? 12);
+      if (compareScore(actor.score, threshold) >= 0) {
+        messages.push(
+          `${actor.logPrefix} 的模长已高于 ${threshold}，无需缓冲。`
+        );
+      } else {
+        const before = actor.score.clone();
+        actor.score.normalizeMagnitude(threshold);
+        logTransition(actor, before, `通过 ${card.name} 稳定在 ${threshold}`);
+      }
+      break;
+    }
+    case "resource.drawToScore": {
+      const mode = params.mode ?? "linear";
+      const remaining = Math.max(0, maxDrawsFor(actor) - actor.drawsUsed);
+      if (remaining === 0) {
+        messages.push(`${actor.logPrefix} 没有剩余抽牌次数，无法转化资源。`);
+        break;
+      }
+      let gain: number;
+      if (mode === "quadratic") {
+        gain = remaining * remaining;
+      } else {
+        const ratio = card.effect.value ?? 3;
+        gain = remaining * ratio;
+      }
+      const before = actor.score.clone();
+      actor.score.addReal(gain);
+      actor.drawsUsed = maxDrawsFor(actor);
+      logTransition(actor, before, `转化 ${remaining} 次抽牌获取 ${gain} 分`);
+      break;
+    }
+    case "resource.recoverDiscard": {
+      if (state.deck.discardPile.length === 0) {
+        messages.push(`${actor.logPrefix} 的弃牌堆为空。`);
+        break;
+      }
+      const recovered = state.deck.discardPile.pop();
+      if (!recovered) {
+        messages.push(`没有可回收的卡牌。`);
+        break;
+      }
+      if (!hasHoldCapacity(actor)) {
+        state.deck.discardPile.push(recovered);
+        messages.push(`${actor.logPrefix} 的滞留位已满，回收失败。`);
+        break;
+      }
+      actor.holdSlots.unshift(recovered);
+      messages.push(
+        `${actor.logPrefix} 将 ${recovered.name} 回收到滞留位顶部。`
+      );
+      break;
+    }
+    default: {
+      messages.push(
+        `${card.name} 的特殊脚本 ${scriptId || "(未指定)"} 尚未实现。`
+      );
+    }
+  }
+
+  return messages;
+};
+
 const applyCardTo = (
   state: GameState,
   actor: PlayerState,
@@ -488,28 +932,46 @@ const applyCardTo = (
   switch (card.effect.type) {
     case "add": {
       const value = card.effect.value ?? 0;
-      actor.score += value;
+      const before = actor.score.clone();
+      actor.score.addReal(value);
       messages.push(
-        `${actor.logPrefix} 使用 ${card.name}，分数 +${value} → ${actor.score}`
+        `${actor.logPrefix} 使用 ${
+          card.name
+        }，分数 +${value}：${before.toString()} → ${actor.score.toString()}`
       );
       break;
     }
     case "multiply": {
       const value = card.effect.value ?? 1;
-      actor.score *= value;
-      messages.push(`${actor.logPrefix} 的分数乘以 ${value} → ${actor.score}`);
+      const before = actor.score.clone();
+      actor.score.multiplyScalar(value);
+      messages.push(
+        `${
+          actor.logPrefix
+        } 的分数乘以 ${value}：${before.toString()} → ${actor.score.toString()}`
+      );
       break;
     }
     case "set": {
-      const value = card.effect.value ?? actor.score;
-      actor.score = value;
-      messages.push(`${actor.logPrefix} 的分数直接被设置为 ${value}`);
+      const value = card.effect.value ?? actor.score.modulus();
+      const before = actor.score.clone();
+      actor.score.set(value, 0);
+      messages.push(
+        `${actor.logPrefix} 的分数被 ${
+          card.name
+        } 设置为 ${value}：${before.toString()} → ${actor.score.toString()}`
+      );
       break;
     }
     case "reset": {
       const value = card.effect.value ?? 1;
-      actor.score = value;
-      messages.push(`${actor.logPrefix} 归零重置，当前分数 ${value}`);
+      const before = actor.score.clone();
+      actor.score.set(value, 0);
+      messages.push(
+        `${
+          actor.logPrefix
+        } 归零重置：${before.toString()} → ${actor.score.toString()}`
+      );
       break;
     }
     case "extraDraw": {
@@ -521,13 +983,15 @@ const applyCardTo = (
     case "transfer": {
       const value = card.effect.value ?? 0;
       const feedback = applyNegativeWithShield(opponent, () => {
-        opponent.score = Math.max(0, opponent.score - value);
+        opponent.score.subtractReal(value);
       });
       if (feedback) {
         messages.push(feedback);
       } else {
         messages.push(
-          `${actor.logPrefix} 让对手失去 ${value} 分 → ${opponent.score}`
+          `${
+            actor.logPrefix
+          } 让对手失去 ${value} 分 → ${opponent.score.toString()}`
         );
       }
       break;
@@ -535,21 +999,28 @@ const applyCardTo = (
     case "steal": {
       const value = card.effect.value ?? 0;
       const feedback = applyNegativeWithShield(opponent, () => {
-        opponent.score = Math.max(0, opponent.score - value);
-        actor.score += value;
+        opponent.score.subtractReal(value);
+        actor.score.addReal(value);
       });
       if (feedback) {
         messages.push(feedback);
       } else {
-        messages.push(`${actor.logPrefix} 窃取 ${value} 分 → ${actor.score}`);
+        messages.push(
+          `${actor.logPrefix} 窃取 ${value} 分 → ${actor.score.toString()}`
+        );
       }
       break;
     }
     case "victoryShard": {
       const value = card.effect.value ?? 1;
-      actor.victoryShards += value;
+      // allow optional color in notes for generic victoryShard cards
+      const localParams = parseEffectNotes(card.effect.notes);
+      const scriptMessages = executeScriptEffect(state, actor, opponent, card);
+      messages.push(...scriptMessages);
+      const color = localParams.color ?? "命运";
+      const newCt = addShardsTo(actor, color, value);
       messages.push(
-        `${actor.logPrefix} 收集到胜利碎片（${actor.victoryShards}）`
+        `${actor.logPrefix} 收集到 ${color} 碎片 x${value}（该色共 ${newCt}）`
       );
       break;
     }
@@ -585,16 +1056,26 @@ const applyCardTo = (
       break;
     }
     case "wildcard": {
-      if (actor.score < opponent.score) {
-        const swap = actor.score;
-        actor.score = opponent.score;
-        opponent.score = swap;
-        messages.push(`${actor.logPrefix} 触发百变替换，分数对调！`);
+      if (compareScore(actor.score, opponent.score) < 0) {
+        const swap = actor.score.clone();
+        const beforeOpponent = opponent.score.clone();
+        actor.score.setFrom(beforeOpponent);
+        opponent.score.setFrom(swap);
+        messages.push(
+          `${
+            actor.logPrefix
+          } 触发百变替换，分数对调！当前 ${actor.score.toString()} / ${opponent.score.toString()}`
+        );
       } else {
         messages.push(
           `${actor.logPrefix} 试图使用百变替换，但自己领先，效果落空。`
         );
       }
+      break;
+    }
+    case "script": {
+      const scriptMessages = executeScriptEffect(state, actor, opponent, card);
+      messages.push(...scriptMessages);
       break;
     }
     case "none":
@@ -851,10 +1332,13 @@ const resolvePassTokens = (state: GameState, actor: PlayerState): string[] => {
   actor.passTokens = actor.passTokens.filter((token) => {
     if (token.level === state.level) {
       const minScore = token.threshold;
-      if (actor.score < minScore) {
-        actor.score = minScore;
+      if (compareScore(actor.score, minScore) < 0) {
+        const before = actor.score.clone();
+        actor.score.set(minScore, 0);
         messages.push(
-          `${actor.logPrefix} 的层级通行证生效，分数提升至 ${minScore}`
+          `${
+            actor.logPrefix
+          } 的层级通行证生效：${before.toString()} → ${actor.score.toString()}`
         );
       }
       return false;
@@ -866,7 +1350,7 @@ const resolvePassTokens = (state: GameState, actor: PlayerState): string[] => {
 
 const checkShardVictory = (state: GameState): string | undefined => {
   for (const player of state.players) {
-    if (player.victoryShards >= state.config.shardsToWin) return player.label;
+    if (anyShardVictory(player, state.config.shardsToWin)) return player.label;
   }
   return undefined;
 };
@@ -881,22 +1365,27 @@ const applyLevelEnd = (state: GameState): void => {
   if (state.players.length >= 2) {
     const p0 = state.players[0];
     const p1 = state.players[1];
-    if (p0.score > p1.score) {
+    const comparison = compareScore(p0.score, p1.score);
+    if (comparison > 0) {
       p0.wins += 1;
       appendLog(
         state,
-        `${p0.logPrefix} 以 ${p0.score} : ${p1.score} 赢下本层！`
+        `${
+          p0.logPrefix
+        } 以 ${p0.score.toString()} : ${p1.score.toString()} 赢下本层！`
       );
-    } else if (p1.score > p0.score) {
+    } else if (comparison < 0) {
       p1.wins += 1;
       appendLog(
         state,
-        `${p1.logPrefix} 以 ${p1.score} : ${p0.score} 赢下本层。`
+        `${
+          p1.logPrefix
+        } 以 ${p1.score.toString()} : ${p0.score.toString()} 赢下本层。`
       );
     } else {
       appendLog(
         state,
-        `双方战平 ${p0.score} : ${p1.score}，视为平局不计胜场。`
+        `双方战平 ${p0.score.toString()} : ${p1.score.toString()}，视为平局不计胜场。`
       );
     }
   }
@@ -957,7 +1446,10 @@ export function getAiTurnSteps(sourceState: GameState): GameState[] {
   const shouldDraw = (): boolean => {
     if (ai.drawsUsed >= allowed) return false;
     if (state.deck.drawPile.length === 0) return false;
-    if (ai.score >= player.score && ai.drawsUsed >= DEFAULT_MAX_DRAWS) {
+    if (
+      compareScore(ai.score, player.score) >= 0 &&
+      ai.drawsUsed >= DEFAULT_MAX_DRAWS
+    ) {
       return rng.next() < 0.35;
     }
     return true;
@@ -983,7 +1475,10 @@ export function getAiTurnSteps(sourceState: GameState): GameState[] {
         steps.push(cloneState(state));
       }
     }
-  } else if (ai.holdSlots.length > 0 && ai.score < player.score) {
+  } else if (
+    ai.holdSlots.length > 0 &&
+    compareScore(ai.score, player.score) < 0
+  ) {
     // 没有抽卡机会时，尝试释放一张滞留卡
     const holdCard = removeTopHoldCard(ai);
     if (holdCard) {
@@ -1011,19 +1506,21 @@ const decideAiAction = (
       return "play";
     case "multiply":
       if (ai.holdSlots.length > 0) return "play";
-      if (ai.score < player.score) return "play";
+      if (compareScore(ai.score, player.score) < 0) return "play";
       return "hold";
     case "add":
       return "play";
     case "reset":
-      return ai.score < player.score * 0.6 ? "play" : "hold";
+      return compareScore(ai.score, player.score.modulus() * 0.6) < 0
+        ? "play"
+        : "hold";
     case "transfer":
     case "steal":
       return "play";
     case "duplicate":
       return ai.holdSlots.length > 0 ? "play" : "hold";
     case "wildcard":
-      return ai.score < player.score ? "play" : "hold";
+      return compareScore(ai.score, player.score) < 0 ? "play" : "hold";
     default:
       return "play";
   }

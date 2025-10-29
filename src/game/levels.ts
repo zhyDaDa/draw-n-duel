@@ -1,9 +1,9 @@
 import {
-  CARD_LIBRARY,
   createWeightedCard,
   getCardsForLevel,
   weightByRarity,
 } from "./cards";
+import { CARD_LIBRARY } from './CARD_LIBRARY';
 import {
   type CardInstance,
   type DeckState,
@@ -128,13 +128,21 @@ export const buildDeckForLevel = (
     }
   }
 
+  // Inject fortress shard pool: 每一层确保有 2 * 玩家数量 个碎片（颜色随机从带 shard 标签的卡牌中选取）
+  const shardPool = CARD_LIBRARY.filter(
+    (card) => card.tags?.includes("shard") && level >= card.levelRange[0]
+  );
+  const shardsToInject = Math.max(0, 2 * players.length);
+  for (let i = 0; i < shardsToInject && shardPool.length > 0; i += 1) {
+    const pick = shardPool[Math.floor(rng() * shardPool.length)];
+    instances.push(createWeightedCard(pick, rng));
+  }
+
   const shuffled = shuffle(instances, rng);
   const rareCount = shuffled.filter(
     (card) => card.rarity === "rare" || card.rarity === "legendary"
   ).length;
-  const shardCount = shuffled.filter(
-    (card) => card.effect.type === "victoryShard"
-  ).length;
+  const shardCount = shuffled.filter((card) => card.tags?.includes("shard")).length;
 
   return {
     originalDeckSize: deckSize,

@@ -128,13 +128,24 @@ const GamePlayPage: React.FC = () => {
     const runWithDelay = async (ms: number) =>
       await new Promise((r) => setTimeout(r, ms));
 
-    const randomDelay = () => 1000 + Math.floor(Math.random() * 500);
+    // 缩短 AI 的随机延迟: 由原来的 500-1000ms 缩短到 200-400ms，使动作更紧凑但依然可见
+    const randomDelay = () => 200 + Math.floor(Math.random() * 200);
     const waitRandom = () => runWithDelay(randomDelay());
 
-    const performAiOperation = async (operation: () => boolean) => {
+    /**
+     * 包装 AI 的单次操作：在操作前后等待一段随机时间。
+     * options.skipPostWait: 若操作后控制权已回到人类玩家，则跳过后置等待（以便立刻解禁 UI）。
+     */
+    const performAiOperation = async (
+      operation: () => boolean,
+      options?: { skipPostWait?: () => boolean }
+    ) => {
       await waitRandom();
       const succeeded = operation();
-      await waitRandom();
+      const skip = options?.skipPostWait ? options.skipPostWait() : false;
+      if (!skip) {
+        await waitRandom();
+      }
       return succeeded;
     };
 
@@ -162,7 +173,8 @@ const GamePlayPage: React.FC = () => {
         ) {
           s = beginNextPlayerTurn(s);
           setGameState(s);
-          await runWithDelay(400);
+          // 给出一个短的预览动画帧（比之前短一点）再继续 AI 逻辑
+          await runWithDelay(300);
         }
 
         const opponent =
@@ -172,44 +184,53 @@ const GamePlayPage: React.FC = () => {
         if (s.subPhase === "awaitHoldChoice") {
           if (
             (ai.holdSlots?.length ?? 0) > 0 &&
-            ai.score < opponent.score &&
+            ai.score.compareMagnitude(opponent.score) < 0 &&
             !s.activeCard
           ) {
-            await performAiOperation(() => {
-              const res = releaseHoldCard(s);
-              if (!isEngineError(res)) {
-                s = res.state;
-                setGameState(s);
-                return true;
-              }
-              return false;
-            });
-          }
-
-          const drawsRemaining = getDrawsRemaining(s);
-          const canDraw = drawsRemaining > 0 && s.deck.drawPile.length > 0;
-          if (canDraw && s.subPhase === "awaitHoldChoice" && !s.activeCard) {
-            const check = ensurePhase(s, "playerTurn", "awaitHoldChoice");
-            if (!check) {
-              await performAiOperation(() => {
-                const s1 = advanceSubPhase(s);
-                const res = drawCard(s1);
+            await performAiOperation(
+              () => {
+                const res = releaseHoldCard(s);
                 if (!isEngineError(res)) {
                   s = res.state;
                   setGameState(s);
                   return true;
                 }
                 return false;
-              });
+              },
+              { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+            );
+          }
+
+          const drawsRemaining = getDrawsRemaining(s);
+          const canDraw = drawsRemaining > 0 && s.deck.drawPile.length > 0;
+            if (canDraw && s.subPhase === "awaitHoldChoice" && !s.activeCard) {
+            const check = ensurePhase(s, "playerTurn", "awaitHoldChoice");
+            if (!check) {
+              await performAiOperation(
+                () => {
+                  const s1 = advanceSubPhase(s);
+                  const res = drawCard(s1);
+                  if (!isEngineError(res)) {
+                    s = res.state;
+                    setGameState(s);
+                    return true;
+                  }
+                  return false;
+                },
+                { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+              );
             }
           } else if (!s.activeCard) {
-            await performAiOperation(() => {
-              const endState = finishPlayerTurn(s);
-              const started = beginNextPlayerTurn(endState);
-              s = started;
-              setGameState(started);
-              return true;
-            });
+            await performAiOperation(
+              () => {
+                const endState = finishPlayerTurn(s);
+                const started = beginNextPlayerTurn(endState);
+                s = started;
+                setGameState(started);
+                return true;
+              },
+              { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+            );
             return;
           }
         }
@@ -232,12 +253,17 @@ const GamePlayPage: React.FC = () => {
                 return "play" as const;
               case "multiply":
                 if ((aiNow.holdSlots?.length ?? 0) > 0) return "play" as const;
-                if (aiNow.score < oppNow.score) return "play" as const;
+                if (aiNow.score.compareMagnitude(oppNow.score) < 0)
+                  return "play" as const;
                 return "hold" as const;
               case "add":
                 return "play" as const;
               case "reset":
-                return aiNow.score < oppNow.score * 0.6
+                return (
+                  aiNow.score.compareMagnitude(
+                    oppNow.score.modulus() * 0.6
+                  ) < 0
+                )
                   ? ("play" as const)
                   : ("hold" as const);
               case "transfer":
@@ -248,7 +274,7 @@ const GamePlayPage: React.FC = () => {
                   ? ("play" as const)
                   : ("hold" as const);
               case "wildcard":
-                return aiNow.score < oppNow.score
+                return aiNow.score.compareMagnitude(oppNow.score) < 0
                   ? ("play" as const)
                   : ("hold" as const);
               default:
@@ -257,35 +283,41 @@ const GamePlayPage: React.FC = () => {
           };
           const decision = decide();
           let actionSucceeded = false;
-          await performAiOperation(() => {
-            let res: EngineOutcome<ActionResult>;
-            if (
-              decision === "hold" &&
-              (aiNow.holdSlots?.length ?? 0) < aiNow.MAX_HOLD_SLOTS
-            ) {
-              res = stashActiveCard(s);
-            } else if (decision === "hold") {
-              res = discardActiveCard(s);
-            } else {
-              res = playActiveCard(s);
-            }
-            if (!isEngineError(res)) {
-              s = res.state;
-              setGameState(s);
-              actionSucceeded = true;
-              return true;
-            }
-            return false;
-          });
+          await performAiOperation(
+            () => {
+              let res: EngineOutcome<ActionResult>;
+              if (
+                decision === "hold" &&
+                (aiNow.holdSlots?.length ?? 0) < aiNow.MAX_HOLD_SLOTS
+              ) {
+                res = stashActiveCard(s);
+              } else if (decision === "hold") {
+                res = discardActiveCard(s);
+              } else {
+                res = playActiveCard(s);
+              }
+              if (!isEngineError(res)) {
+                s = res.state;
+                setGameState(s);
+                actionSucceeded = true;
+                return true;
+              }
+              return false;
+            },
+            { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+          );
 
           if (actionSucceeded) {
-            await performAiOperation(() => {
-              const endState = finishPlayerTurn(s);
-              const started = beginNextPlayerTurn(endState);
-              s = started;
-              setGameState(started);
-              return true;
-            });
+            await performAiOperation(
+              () => {
+                const endState = finishPlayerTurn(s);
+                const started = beginNextPlayerTurn(endState);
+                s = started;
+                setGameState(started);
+                return true;
+              },
+              { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+            );
           }
         }
       } finally {
@@ -475,6 +507,7 @@ const GamePlayPage: React.FC = () => {
   const currentPlayer =
     gameState.players?.[gameState.currentPlayerIndex] ?? gameState.players?.[0];
   const holdSlots = currentPlayer?.holdSlots ?? [];
+  const maxHoldSlots = currentPlayer?.MAX_HOLD_SLOTS ?? 2;
   const activeCard = gameState.activeCard;
   const canPlay = Boolean(activeCard);
   const canStash =
@@ -727,6 +760,7 @@ const GamePlayPage: React.FC = () => {
               deckRemaining={gameState.deck.drawPile.length}
               activeCard={activeCard}
               holdSlots={holdSlots}
+              maxHoldSlots={maxHoldSlots}
               animationEvent={animationEvent}
             />
           </section>

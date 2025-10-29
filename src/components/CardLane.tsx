@@ -1,5 +1,5 @@
 import { Tooltip } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { CardInstance } from "../game/types";
 import { DEFAULT_MAX_HOLD_SLOTS } from "../game/types";
@@ -88,7 +88,7 @@ const renderCard = (
     <Tooltip
       title={renderTooltip(card)}
       placement="top"
-      className="tooltip-light"
+      classNames={{ root: "tooltip-light" }}
     >
       <div className={`card-slot__card ${extraClass}`}>
         <CardDisplay card={card} size="sm" />
@@ -108,6 +108,7 @@ const CardLane: React.FC<CardLaneProps> = ({
   const [ghostCard, setGhostCard] = useState<GhostCard | null>(null);
   const [stackShiftKey, setStackShiftKey] = useState<number | null>(null);
   const currentEventKey = animationEvent?.timestamp ?? 0;
+  const slotGroupRef = useRef<HTMLDivElement | null>(null);
 
   const activeCardClass = useMemo(() => {
     if (!animationEvent || !activeCard) return "";
@@ -180,6 +181,45 @@ const CardLane: React.FC<CardLaneProps> = ({
     return () => clearTimeout(timer);
   }, [stackShiftKey]);
 
+  const overflowCards = holdSlots.slice(2);
+  const overflowCount = overflowCards.length;
+
+  // 是否启用横向滚动：只有当滞留位超过 2 才开启
+  const scrollable = maxHoldSlots > 2;
+
+  // 样式由 CSS 控制，故无需测量宽度（使用 CSS 变量 --card-slot-width）
+
+  // 将鼠标垂直滚轮映射为横向滚动（仅当启用横向滚动时）
+  const onWheelForSlots = (e: React.WheelEvent) => {
+    if (!scrollable) return;
+    const el = slotGroupRef.current;
+    if (!el) return;
+    const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+    if (Math.abs(delta) > 0) {
+      e.preventDefault();
+      // 使用平滑滚动
+      el.scrollBy({ left: delta, behavior: "smooth" });
+    }
+  };
+
+  const renderOverflowTooltip = (): ReactNode => {
+    if (overflowCount === 0) return null;
+    return (
+      <div className="card-slot__overflow-tooltip">
+        {overflowCards.map((card, idx) => (
+          <div key={card.instanceId} className="card-slot__overflow-item">
+            <strong>{`滞留位 ${idx + 3}`}</strong>
+            <div className="card-slot__overflow-name">{card.name}</div>
+            <div className="card-slot__overflow-desc">
+              {describeCardEffect(card)}
+            </div>
+            {idx < overflowCards.length - 1 ? <hr /> : null}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <section className="card-lane" aria-label="卡牌分区">
       <div className="card-slot card-slot--deck">
@@ -215,9 +255,11 @@ const CardLane: React.FC<CardLaneProps> = ({
       <div className="card-lane__divider" aria-hidden="true" />
 
       <div
+        ref={slotGroupRef}
+        onWheel={onWheelForSlots}
         className={`card-slot-group ${
           stackShiftKey ? "card-slot-group--animated" : ""
-        }`}
+        } ${scrollable ? "card-slot-group--scrollable" : ""}`}
       >
         {slotCards.map((card, index) => (
           <div
@@ -231,7 +273,20 @@ const CardLane: React.FC<CardLaneProps> = ({
                 滞留位空
               </div>
             )}
-            <span className="card-slot__label">滞留位 {index + 1}</span>
+            <span className="card-slot__label">
+              滞留位 {index + 1}
+              {index === 1 && overflowCount > 0 ? (
+                <Tooltip
+                  title={renderOverflowTooltip()}
+                  placement="top"
+                  classNames={{ root: "tooltip-light" }}
+                >
+                  <span className="card-slot__overflow-indicator">
+                    +{overflowCount}
+                  </span>
+                </Tooltip>
+              ) : null}
+            </span>
           </div>
         ))}
         {ghostCard && ghostCard.origin === "hold" && (

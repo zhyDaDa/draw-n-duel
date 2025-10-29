@@ -62,7 +62,6 @@
   font-weight: 600;
 }
 
-
 .buff-display--temp {
   border-color: rgba(251, 191, 36, 0.45);
   background: linear-gradient(135deg, #fffbeb, #fef3c7);
@@ -124,8 +123,25 @@
   display: flex;
   gap: 0.65rem;
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 0.5rem 0;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  align-items: center;
+  /* 在 iOS 上启用动量滚动，程序化滚动平滑过渡 */
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  /* 让滚动有一点“阻尼/吸附”感觉（轻微对齐，而不是强制吸附） */
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain; /* 避免父容器被一起滚动 */
+  touch-action: pan-x; /* 明确水平滚动手势 */
   /* scrollbar styling for WebKit */
+}
+
+/* 使每个 buff 在滚动时以中心对齐，配合上面的 proximity 会有更平滑的体验 */
+.buff-list > * {
+  scroll-snap-align: center;
+  scroll-snap-stop: normal;
 }
 
 .buff-list--animated {

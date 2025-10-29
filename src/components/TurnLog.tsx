@@ -1,7 +1,8 @@
 import { Tooltip } from 'antd'
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { CARD_LIBRARY, MERCHANT_EXCLUSIVE } from '../game/cards'
+import { MERCHANT_EXCLUSIVE } from '../game/cards'
+import { CARD_LIBRARY } from '../game/CARD_LIBRARY'
 import type { CardDefinition } from '../game/types'
 
 interface TurnLogProps {

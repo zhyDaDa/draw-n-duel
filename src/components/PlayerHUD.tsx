@@ -1,6 +1,10 @@
 import CardDisplay from "./CardDisplay";
 import AnimatedBuffList from "./AnimatedBuffList";
-import type { PlayerState, PlayerBuff } from "../game/types";
+import {
+  DEFAULT_MAX_HOLD_SLOTS,
+  type PlayerState,
+  type PlayerBuff,
+} from "../game/types";
 import "../components/BuffDisplay.css";
 
 interface PlayerHUDProps {
@@ -18,17 +22,33 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
 }) => {
   // 转换现有数据到 Buff 系统
   const buffs: PlayerBuff[] = [];
+  const extraHoldSlots = Math.max(0, player.MAX_HOLD_SLOTS - DEFAULT_MAX_HOLD_SLOTS);
 
-  // 胜利碎片 Buff
-  if (player.victoryShards > 0) {
+  if (extraHoldSlots > 0) {
     buffs.push({
-      id: "victory-shard",
-      name: "胜利碎片",
-      description: `收集到 ${player.victoryShards} 枚胜利碎片。收集 3 枚即可直接获胜！`,
-      icon: "/src/assets/svg/拼图_puzzle.svg",
-      effect: { type: "victoryShard" },
+      id: "hold-slot-upgrade",
+      name: "滞留扩容",
+      description: `滞留位上限提升 ${extraHoldSlots}，当前共有 ${player.MAX_HOLD_SLOTS} 个滞留槽。`,
+      icon: "/src/assets/svg/双右_double-right.svg",
+      effect: { type: "duplicate" },
       isPermanent: true,
-      count: player.victoryShards,
+      count: extraHoldSlots,
+    });
+  }
+
+  // 胜利碎片 Buff —— 按颜色展示，每种颜色单独计数
+  if (player.victoryShards && Object.keys(player.victoryShards).length > 0) {
+    Object.entries(player.victoryShards).forEach(([color, cnt]) => {
+      if (cnt <= 0) return;
+      buffs.push({
+        id: `victory-shard-${color}`,
+        name: `${color} 碎片`,
+        description: `已收集 ${cnt} 枚 ${color} 碎片。收集 ${3} 枚相同颜色碎片即可直接获胜！`,
+        icon: "/src/assets/svg/拼图_puzzle.svg",
+        effect: { type: "victoryShard" },
+        isPermanent: true,
+        count: cnt,
+      });
     });
   }
 
@@ -118,7 +138,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       <div className="player-hud__stats">
         <div>
           <strong>分数：</strong>
-          <span>{player.score}</span>
+          <span>{player.score.toString()}</span>
         </div>
         <div>
           <strong>胜场：</strong>

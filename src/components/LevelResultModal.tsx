@@ -41,7 +41,9 @@ const LevelResultModal: React.FC<LevelResultModalProps> = ({
       holdTimerRef.current = null;
     }
 
-    targetScoresRef.current = players.map((p) => Math.max(0, p.score));
+    targetScoresRef.current = players.map((p) =>
+      Math.max(0, p.score.modulus())
+    );
     setAnimatedScores(players.map(() => 0));
 
     const steps = Math.ceil(DURATION_MS / TICK_MS);
@@ -102,8 +104,8 @@ const LevelResultModal: React.FC<LevelResultModalProps> = ({
   }, [open, players]);
 
   const ranks = React.useMemo(() => {
-    const pairs = players.map((p, i) => ({ i, score: p.score }));
-    pairs.sort((a, b) => b.score - a.score);
+  const pairs = players.map((p, i) => ({ i, score: p.score.modulus() }));
+  pairs.sort((a, b) => b.score - a.score);
     const map = new Map<number, number>();
     pairs.forEach((p, idx) => map.set(p.i, idx + 1));
     return map; // index -> rank
@@ -111,7 +113,7 @@ const LevelResultModal: React.FC<LevelResultModalProps> = ({
 
   // compute maximum score among players to scale bars proportionally
   const maxScore = React.useMemo(() => {
-    const vals = players.map((p) => Math.max(0, p.score));
+  const vals = players.map((p) => Math.max(0, p.score.modulus()));
     const m = Math.max(1, ...vals);
     return m;
   }, [players]);
@@ -184,7 +186,12 @@ const LevelResultModal: React.FC<LevelResultModalProps> = ({
                     strokeColor={rank === 1 ? "#22c55e" : "#6366f1"}
                   />
                 </div>
-                <div className="level-result__score">{displayed}</div>
+                <div
+                  className="level-result__score"
+                  title={p.score.toString()}
+                >
+                  {displayed}
+                </div>
               </div>
             );
           })}

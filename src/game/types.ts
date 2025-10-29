@@ -1,6 +1,8 @@
+import { ComplexScore } from "./ComplexScore";
 export type EffectType =
   | "add"
   | "multiply"
+  | "divide"
   | "set"
   | "reset"
   | "extraDraw"
@@ -12,6 +14,7 @@ export type EffectType =
   | "duplicate"
   | "merchantToken"
   | "wildcard"
+  | "script"
   | "none";
 
 export type TargetType = "self" | "opponent" | "both";
@@ -26,6 +29,7 @@ export interface CardEffect {
   maxValue?: number;
   carryOver?: boolean;
   notes?: string;
+  script?: string;
 }
 
 export interface CardDefinition {
@@ -64,13 +68,16 @@ export interface DeckState {
 
 export interface PlayerState {
   label: string;
-  score: number;
+  score: ComplexScore;
   drawsUsed: number;
   maxDraws: number;
   extraDraws: number;
   holdSlots: CardInstance[];
   backpack: CardInstance[];
-  victoryShards: number;
+  /**
+   * 胜利碎片按颜色/类型计数，例如 { "湛蓝": 1, "赤红": 2 }
+   */
+  victoryShards: Record<string, number>;
   wins: number;
   passTokens: Array<{ level: number; threshold: number }>;
   shields: number;
