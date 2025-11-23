@@ -11,6 +11,7 @@ import TurnLog from "../components/TurnLog";
 import { getLevelConfig } from "../game/levels";
 import LevelResultModal from "../components/LevelResultModal";
 import PhaseIntroModal from "../components/PhaseIntroModal";
+import InteractionModal from "../components/InteractionModal";
 import {
   acceptMerchantOffer,
   createInitialState,
@@ -23,6 +24,7 @@ import {
   advanceLevelPhase,
   beginNextPlayerTurn,
   playActiveCard,
+  resolveInteractionOption,
   releaseHoldCard,
   skipMerchant,
   stashActiveCard,
@@ -80,6 +82,7 @@ const GamePlayPage: React.FC = () => {
   const [showLevelResult, setShowLevelResult] = useState(false);
   const [showPhaseIntro, setShowPhaseIntro] = useState(false);
   const phaseIntroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interactionAutoRef = useRef<string | null>(null);
 
   useEffect(() => {
     setGameState(createInitialState(undefined, playerLabels));
@@ -334,6 +337,7 @@ const GamePlayPage: React.FC = () => {
     }
   }, [autoAI, gameState]);
 
+
   const handleOutcome = (
     outcome: EngineOutcome<ActionResult | ResolveResult>
   ) => {
@@ -350,6 +354,44 @@ const GamePlayPage: React.FC = () => {
       return s;
     });
   };
+
+  useEffect(() => {
+    const interaction = gameState.pendingInteraction;
+    if (!interaction) {
+      interactionAutoRef.current = null;
+      return;
+    }
+    const owner = gameState.players[interaction.ownerIndex];
+    if (!owner?.isAI || !autoAI) return;
+    if (interactionAutoRef.current === interaction.id) return;
+    interactionAutoRef.current = interaction.id;
+
+    const pickOption = () => {
+      if (!interaction.options.length) return null;
+      return interaction.options.reduce<{ option: (typeof interaction.options)[0]; weight: number } | null>(
+        (best, option) => {
+          const base = option.aiWeight ?? (option.intent === "positive" ? 1.4 : option.intent === "negative" ? 0.6 : 1);
+          const weight = option.autoResolve ? base + 0.5 : base;
+          if (!best || weight > best.weight) {
+            return { option, weight };
+          }
+          return best;
+        },
+        null
+      )?.option;
+    };
+
+    const chosen = pickOption();
+    if (!chosen) return;
+
+    const timer = setTimeout(() => {
+      const latest = gameState.pendingInteraction;
+      if (!latest || latest.id !== interaction.id) return;
+      handleOutcome(resolveInteractionOption(gameState, chosen.id));
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [autoAI, gameState, handleOutcome]);
 
   const handleGameStateUpdate = (outcome: EngineOutcome<GameState>) => {
     if (isEngineError(outcome)) {
@@ -381,7 +423,7 @@ const GamePlayPage: React.FC = () => {
   );
 
   const handleDraw = () => {
-    if (aiBusy) return;
+    if (aiBusy || interactionLocked) return;
     const phaseCheck = ensurePhase(gameState, "playerTurn", "awaitHoldChoice");
     if (phaseCheck) {
       setStatusMessage(phaseCheck.message);
@@ -400,7 +442,7 @@ const GamePlayPage: React.FC = () => {
   };
 
   const handlePlay = () => {
-    if (aiBusy) return;
+    if (aiBusy || interactionLocked) return;
     const activeCard = gameState.activeCard;
     const result = playActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
@@ -419,7 +461,7 @@ const GamePlayPage: React.FC = () => {
   };
 
   const handleStash = () => {
-    if (aiBusy) return;
+    if (aiBusy || interactionLocked) return;
     const activeCard = gameState.activeCard;
     const result = stashActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
@@ -438,7 +480,7 @@ const GamePlayPage: React.FC = () => {
   };
 
   const handleDiscard = () => {
-    if (aiBusy) return;
+    if (aiBusy || interactionLocked) return;
     const activeCard = gameState.activeCard;
     const result = discardActiveCard(gameState);
     if (!isEngineError(result) && activeCard) {
@@ -458,6 +500,7 @@ const GamePlayPage: React.FC = () => {
 
   const handleReleaseHold = () => {
     if (aiBusy) return;
+    if (interactionLocked) return;
     const current =
       gameState.players?.[gameState.currentPlayerIndex] ??
       gameState.players?.[0];
@@ -473,8 +516,14 @@ const GamePlayPage: React.FC = () => {
     handleOutcome(result);
   };
 
+  const handleInteractionSelect = (optionId: string) => {
+    if (!pendingInteraction) return;
+    const outcome = resolveInteractionOption(gameState, optionId);
+    handleOutcome(outcome);
+  };
+
   const handleEndTurn = () => {
-    if (aiBusy) return;
+    if (aiBusy || interactionLocked) return;
     const endState = finishPlayerTurn(gameState);
     const started = beginNextPlayerTurn(endState);
     setGameState(started);
@@ -506,6 +555,14 @@ const GamePlayPage: React.FC = () => {
   const isPlayerTurn = gameState.phase === "playerTurn";
   const currentPlayer =
     gameState.players?.[gameState.currentPlayerIndex] ?? gameState.players?.[0];
+  const pendingInteraction = gameState.pendingInteraction;
+  const interactionOwner = pendingInteraction
+    ? gameState.players[pendingInteraction.ownerIndex]
+    : null;
+  const isLocalInteractionOwner = Boolean(
+    pendingInteraction && interactionOwner && !interactionOwner.isAI
+  );
+  const interactionLocked = Boolean(pendingInteraction);
   const holdSlots = currentPlayer?.holdSlots ?? [];
   const maxHoldSlots = currentPlayer?.MAX_HOLD_SLOTS ?? 2;
   const activeCard = gameState.activeCard;
@@ -517,20 +574,34 @@ const GamePlayPage: React.FC = () => {
     !isPlayerTurn ||
     gameState.subPhase !== "awaitHoldChoice" ||
     Boolean(activeCard) ||
-    aiBusy;
+    aiBusy ||
+    interactionLocked;
   const playDisabled =
-    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canPlay || aiBusy;
+    !isPlayerTurn ||
+    gameState.subPhase !== "awaitAction" ||
+    !canPlay ||
+    aiBusy ||
+    interactionLocked;
   const stashDisabled =
-    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canStash || aiBusy;
+    !isPlayerTurn ||
+    gameState.subPhase !== "awaitAction" ||
+    !canStash ||
+    aiBusy ||
+    interactionLocked;
   const discardDisabled =
-    !isPlayerTurn || gameState.subPhase !== "awaitAction" || !canDiscard || aiBusy;
+    !isPlayerTurn ||
+    gameState.subPhase !== "awaitAction" ||
+    !canDiscard ||
+    aiBusy ||
+    interactionLocked;
   const releaseDisabled =
     !isPlayerTurn ||
     gameState.subPhase !== "awaitHoldChoice" ||
     holdSlots.length === 0 ||
     Boolean(activeCard) ||
-    aiBusy;
-  const endTurnDisabled = !isPlayerTurn || aiBusy;
+    aiBusy ||
+    interactionLocked;
+  const endTurnDisabled = !isPlayerTurn || aiBusy || interactionLocked;
   const noActionsAvailable =
     isPlayerTurn &&
     drawDisabled &&
@@ -583,15 +654,16 @@ const GamePlayPage: React.FC = () => {
           key: "discard-hold",
           label: "丢弃滞留",
           onClick: () => {
-                if (aiBusy) return;
+            if (aiBusy) return;
             const res = discardHoldCard(gameState);
             handleOutcome(res);
           },
           disabled:
             !isPlayerTurn ||
             (holdSlots?.length ?? 0) === 0 ||
-                Boolean(activeCard) ||
-                aiBusy,
+            Boolean(activeCard) ||
+            aiBusy ||
+            interactionLocked,
           tooltip: "丢弃滞留位顶部的卡牌。",
         },
       ];
@@ -621,22 +693,25 @@ const GamePlayPage: React.FC = () => {
     ];
   }, [
     gameState.subPhase,
-    releaseDisabled,
-    isPlayerTurn,
-    holdSlots?.length,
-    activeCard,
     drawButtonLabel,
     handleDraw,
     drawDisabled,
     drawsRemaining,
-    playDisabled,
-    handlePlay,
-    stashDisabled,
-    handleStash,
-    discardDisabled,
-    handleDiscard,
-    gameState,
+    handleReleaseHold,
+    releaseDisabled,
     aiBusy,
+    isPlayerTurn,
+    holdSlots?.length,
+    activeCard,
+    handleOutcome,
+    gameState,
+    interactionLocked,
+    handlePlay,
+    playDisabled,
+    handleStash,
+    stashDisabled,
+    handleDiscard,
+    discardDisabled,
   ]);
 
   const endTurnButtonClasses = ["btn", "btn--accent"];
@@ -762,6 +837,9 @@ const GamePlayPage: React.FC = () => {
               holdSlots={holdSlots}
               maxHoldSlots={maxHoldSlots}
               animationEvent={animationEvent}
+              pendingInteraction={pendingInteraction}
+              interactionOwnerName={interactionOwner?.logPrefix ?? interactionOwner?.label}
+              isInteractionOwner={isLocalInteractionOwner}
             />
           </section>
         </div>
@@ -770,6 +848,12 @@ const GamePlayPage: React.FC = () => {
           <TurnLog entries={gameState.log} />
         </div>
       </Flex>
+      <InteractionModal
+        interaction={pendingInteraction}
+        visible={Boolean(pendingInteraction && isLocalInteractionOwner)}
+        ownerLabel={interactionOwner?.logPrefix ?? interactionOwner?.label ?? "你"}
+        onSelect={handleInteractionSelect}
+      />
       <MerchantModal
         isOpen={gameState.phase === "merchant"}
         offers={gameState.merchantOffers}

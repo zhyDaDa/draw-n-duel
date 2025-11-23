@@ -26,6 +26,9 @@ const createInstance = (definition: CardDefinition, rng: () => number): CardInst
   rarity: definition.rarity,
   effect: withRandomValue(definition.effect, rng),
   tags: definition.tags ?? [],
+  color: definition.color,
+  logic: definition.logic,
+  interactionTemplate: definition.interactionTemplate,
 })
 
 const MERCHANT_ONLY_TAG = 'merchant-only'
@@ -109,4 +112,7 @@ export const cloneCardInstance = (card: CardInstance): CardInstance => ({
   instanceId: `${card.definitionId}-${Date.now()}-${instanceCounter++}`,
   effect: { ...card.effect },
   tags: [...card.tags],
+  color: card.color,
+  logic: card.logic,
+  interactionTemplate: card.interactionTemplate,
 })

@@ -1,7 +1,7 @@
 import { Tooltip } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { CardInstance } from "../game/types";
+import type { CardInstance, InteractionRequest } from "../game/types";
 import { DEFAULT_MAX_HOLD_SLOTS } from "../game/types";
 import CardDisplay, { describeCardEffect } from "./CardDisplay";
 
@@ -25,6 +25,9 @@ interface CardLaneProps {
   holdSlots: CardInstance[];
   maxHoldSlots?: number;
   animationEvent: CardLaneAnimationEvent | null;
+  pendingInteraction?: InteractionRequest | null;
+  interactionOwnerName?: string;
+  isInteractionOwner?: boolean;
 }
 
 type GhostCard = {
@@ -104,6 +107,9 @@ const CardLane: React.FC<CardLaneProps> = ({
   holdSlots,
   maxHoldSlots = DEFAULT_MAX_HOLD_SLOTS,
   animationEvent,
+  pendingInteraction,
+  interactionOwnerName,
+  isInteractionOwner = false,
 }) => {
   const [ghostCard, setGhostCard] = useState<GhostCard | null>(null);
   const [stackShiftKey, setStackShiftKey] = useState<number | null>(null);
@@ -116,6 +122,12 @@ const CardLane: React.FC<CardLaneProps> = ({
     if (animationEvent.type === "draw") return "card-slot__card--draw";
     return "";
   }, [animationEvent, activeCard]);
+
+  const interactionMessage = pendingInteraction
+    ? isInteractionOwner
+      ? "等待你做出选择…"
+      : `${interactionOwnerName ?? "对手"} 正在考虑…`
+    : null;
 
   const slotCards = useMemo(
     () =>
@@ -237,10 +249,22 @@ const CardLane: React.FC<CardLaneProps> = ({
 
       <div className="card-slot card-slot--active">
         {activeCard ? (
-          renderCard(activeCard, { extraClass: activeCardClass })
+          renderCard(activeCard, {
+            extraClass: [
+              activeCardClass,
+              pendingInteraction ? "card-slot__card--pending" : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+          })
         ) : (
           <div className="card-slot__placeholder">等待抽牌</div>
         )}
+        {activeCard && pendingInteraction ? (
+          <div className="card-slot__pending-overlay">
+            <span>{interactionMessage}</span>
+          </div>
+        ) : null}
         {ghostCard && ghostCard.origin === "active" && (
           <div
             key={ghostCard.key}

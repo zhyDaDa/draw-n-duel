@@ -129,6 +129,8 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
     }
   });
 
+  const allBuffs = [...(player.buffs ?? []), ...buffs];
+
   return (
     <section className={`player-hud ${isCurrent ? "player-hud--active" : ""}`}>
       <header className="player-hud__header">
@@ -153,7 +155,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       </div>
 
       <div className="player-hud__buffs">
-        <AnimatedBuffList buffs={buffs} minRows={1} />
+        <AnimatedBuffList buffs={allBuffs} minRows={1} />
       </div>
 
       {player.backpack.length > 0 && (

@@ -1,4 +1,11 @@
 import { ComplexScore } from "./ComplexScore";
+export type CardColor =
+  | "black"
+  | "blue"
+  | "red"
+  | "golden"
+  | "colorless";
+
 export type EffectType =
   | "add"
   | "multiply"
@@ -15,6 +22,7 @@ export type EffectType =
   | "merchantToken"
   | "wildcard"
   | "script"
+  | "interactive"
   | "none";
 
 export type TargetType = "self" | "opponent" | "both";
@@ -30,6 +38,15 @@ export interface CardEffect {
   carryOver?: boolean;
   notes?: string;
   script?: string;
+  interactionId?: string;
+}
+
+export interface CardLogicConfig {
+  checkHistory?: boolean;
+  checkHand?: boolean;
+  miniGame?: "dice" | "coin" | "sprint";
+  requiresCollection?: string;
+  disableAIInteraction?: boolean;
 }
 
 export interface CardDefinition {
@@ -43,6 +60,9 @@ export interface CardDefinition {
   maxCopies?: number;
   effect: CardEffect;
   tags?: string[];
+  color?: CardColor;
+  logic?: CardLogicConfig;
+  interactionTemplate?: InteractionTemplate;
 }
 
 export interface CardInstance {
@@ -54,6 +74,9 @@ export interface CardInstance {
   rarity: Rarity;
   effect: CardEffect;
   tags: string[];
+  color?: CardColor;
+  logic?: CardLogicConfig;
+  interactionTemplate?: InteractionTemplate;
 }
 
 export interface DeckState {
@@ -128,6 +151,10 @@ export interface PlayerBuff {
   effect: CardEffect;
   isPermanent: boolean;
   count: number;
+  category?: "buff" | "debuff" | "collection" | "key" | "status";
+  meta?: BuffMetadata;
+  duration?: number;
+  maxStacks?: number;
   // 新增：阶段触发器
   onTurnStart?: (player: PlayerState, game: GameState) => void;
   onTurnEnd?: (player: PlayerState, game: GameState) => void;
@@ -183,6 +210,52 @@ export interface PlayerBuff {
   ) => void;
 }
 
+export interface BuffMetadata {
+  char?: string;
+  color?: CardColor;
+  sequenceIndex?: number;
+  storedValue?: number;
+  payload?: Record<string, unknown>;
+  [key: string]: string | number | boolean | Record<string, unknown> | undefined;
+}
+
+export type InteractionType = "choice" | "payment" | "gamble" | "miniGame";
+
+export type InteractionVisibility = "owner-only" | "public";
+
+export interface InteractionOption {
+  id: string;
+  label: string;
+  description?: string;
+  costDescription?: string;
+  effect?: CardEffect | CardEffect[];
+  resultScript?: string;
+  intent?: "positive" | "negative" | "neutral";
+  aiWeight?: number;
+  autoResolve?: boolean;
+}
+
+export interface InteractionTemplate {
+  type: InteractionType;
+  title: string;
+  message: string;
+  options: InteractionOption[];
+  visibility?: InteractionVisibility;
+  allowCancel?: boolean;
+  timerMs?: number;
+}
+
+export interface InteractionRequest extends InteractionTemplate {
+  id: string;
+  ownerIndex: number;
+  sourceCard: CardInstance;
+  createdAt: number;
+  autoResolveForAI?: boolean;
+  resumeFromSubPhase: NonNullable<GameState["subPhase"]>;
+  sourceContext?: "active" | "hold" | "script";
+  isSkippable?: boolean;
+}
+
 export interface LevelConfig {
   level: number;
   name: string;
@@ -223,8 +296,10 @@ export interface GameState {
     | "nextPlayerTurnStart"
     | "releaselingHoldCard"
     | "discardingHoldCard"
-    | "awaitMerchantSelection";
+    | "awaitMerchantSelection"
+    | "resolvingInteraction";
   rngSeed: number;
+  pendingInteraction: InteractionRequest | null;
 }
 
 export interface DrawResult {

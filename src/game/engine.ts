@@ -26,6 +26,8 @@ import {
   DEFAULT_MAX_HOLD_SLOTS,
   type ActionResult,
   type CardInstance,
+  type InteractionRequest,
+  type InteractionTemplate,
   type EngineOutcome,
   type GameState,
   type LevelConfig,
@@ -35,6 +37,7 @@ import {
   type Rarity,
   type TargetType,
   type PlayerState,
+  type PlayerBuff,
   type ResolveResult,
 } from "./types";
 
@@ -51,6 +54,13 @@ const createSeededRng = (seed: number) => {
     },
     getSeed: () => current >>> 0,
   };
+};
+
+const nextRandomFloat = (state: GameState): number => {
+  const rng = createSeededRng(state.rngSeed);
+  const value = rng.next();
+  state.rngSeed = rng.getSeed();
+  return value;
 };
 
 const clonePlayer = (player: PlayerState): PlayerState => ({
@@ -79,12 +89,15 @@ const cloneState = (state: GameState): GameState => ({
     cost: { ...offer.cost },
   })),
   log: [...state.log],
+  pendingInteraction: state.pendingInteraction
+    ? {
+        ...state.pendingInteraction,
+        sourceCard: { ...state.pendingInteraction.sourceCard },
+      }
+    : null,
 });
 
 // ---- Shard helpers ----
-const getShardCount = (player: PlayerState, color: string): number =>
-  player.victoryShards?.[color] ?? 0;
-
 const addShardsTo = (
   player: PlayerState,
   color: string,
@@ -107,6 +120,97 @@ const addCardToHold = (player: PlayerState, card: CardInstance): void => {
   if (player.holdSlots.length > player.MAX_HOLD_SLOTS) {
     player.holdSlots.length = player.MAX_HOLD_SLOTS;
   }
+};
+
+const generateBuffId = (prefix: string): string =>
+  `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+
+const removeBuffById = (player: PlayerState, buffId: string): void => {
+  player.buffs = player.buffs.filter((buff) => buff.id !== buffId);
+};
+
+const findBuff = (
+  player: PlayerState,
+  predicate: (buff: PlayerBuff) => boolean
+): PlayerBuff | undefined => player.buffs.find(predicate);
+
+const addCollectionCharacter = (
+  player: PlayerState,
+  char: string,
+  options?: { icon?: string; description?: string }
+): PlayerBuff => {
+  const existing = findBuff(
+    player,
+    (buff) => buff.category === "collection" && buff.meta?.char === char
+  );
+  if (existing) {
+    existing.count += 1;
+    return existing;
+  }
+  const buff: PlayerBuff = {
+    id: generateBuffId(`char-${char}`),
+    name: `收藏「${char}」`,
+    description: options?.description ?? `收集到汉字 ${char}`,
+    icon: options?.icon ?? "/src/assets/svg/文字收藏.svg",
+    effect: { type: "none" },
+    isPermanent: true,
+    count: 1,
+    category: "collection",
+    meta: { char },
+  };
+  player.buffs.push(buff);
+  return buff;
+};
+
+const countCollectedCharacters = (player: PlayerState): number =>
+  player.buffs
+    .filter((buff) => buff.category === "collection")
+    .reduce((sum, buff) => sum + (buff.count ?? 1), 0);
+
+const addKeyBuff = (
+  player: PlayerState,
+  keyType: string,
+  options?: { name?: string; description?: string; icon?: string }
+): PlayerBuff => {
+  const existing = findBuff(
+    player,
+    (buff) => buff.category === "key" && buff.meta?.keyType === keyType
+  );
+  if (existing) {
+    existing.count += 1;
+    return existing;
+  }
+  const buff: PlayerBuff = {
+    id: generateBuffId(`key-${keyType}`),
+    name: options?.name ?? `${keyType} 钥匙`,
+    description: options?.description ?? `掌握 ${keyType} 钥匙，可在特殊事件中使用。`,
+    icon: options?.icon ?? "/src/assets/svg/钥匙.svg",
+    effect: { type: "none" },
+    isPermanent: true,
+    count: 1,
+    category: "key",
+    meta: { keyType },
+  };
+  player.buffs.push(buff);
+  return buff;
+};
+
+const consumeKeyBuff = (
+  player: PlayerState,
+  keyType: string,
+  amount: number = 1
+): boolean => {
+  const buff = findBuff(
+    player,
+    (b) => b.category === "key" && b.meta?.keyType === keyType
+  );
+  if (!buff) return false;
+  if (buff.count <= amount) {
+    removeBuffById(player, buff.id);
+  } else {
+    buff.count -= amount;
+  }
+  return true;
 };
 
 const removeTopHoldCard = (player: PlayerState): CardInstance | undefined =>
@@ -389,6 +493,7 @@ export const createInitialState = (
     merchantOffers: [],
     log: ["对决开始！欢迎来到层级 1 —— Entrance Trial。抽卡准备！"],
     rngSeed: rng.getSeed(),
+    pendingInteraction: null,
   };
 
   setCurrentPlayerByIndex(initial, 0);
@@ -538,6 +643,73 @@ const resolveEffectTargets = (
   return [actor];
 };
 
+let interactionSequence = 0;
+
+const spawnInteractionRequest = (
+  state: GameState,
+  params: {
+    ownerIndex: number;
+    card: CardInstance;
+    template: InteractionTemplate;
+    resumeFrom: NonNullable<GameState["subPhase"]>;
+    context?: InteractionRequest["sourceContext"];
+  }
+): InteractionRequest => {
+  const { ownerIndex, card, template, resumeFrom, context } = params;
+  const normalizedOptions = template.options.map((option, idx) => ({
+    ...option,
+    id: option.id ?? `option-${idx}`,
+  }));
+  const request: InteractionRequest = {
+    ...template,
+    options: normalizedOptions,
+    id: `intr-${Date.now()}-${interactionSequence++}`,
+    ownerIndex,
+    sourceCard: { ...card },
+    createdAt: Date.now(),
+    autoResolveForAI: state.players[ownerIndex]?.isAI ?? false,
+    resumeFromSubPhase: resumeFrom,
+    sourceContext: context ?? "active",
+  };
+  state.pendingInteraction = request;
+  setSubPhase(state, "resolvingInteraction");
+  return request;
+};
+
+type InteractionBuilderContext = {
+  state: GameState;
+  actor: PlayerState;
+  opponent: PlayerState;
+  card: CardInstance;
+};
+
+type InteractionBuilder = (
+  ctx: InteractionBuilderContext
+) => InteractionTemplate | null;
+
+const INTERACTION_BUILDERS: Record<string, InteractionBuilder> = {};
+
+const cloneInteractionTemplate = (
+  template: InteractionTemplate
+): InteractionTemplate => ({
+  ...template,
+  options: template.options.map((option) => ({ ...option })),
+});
+
+const resolveInteractionTemplate = (
+  ctx: InteractionBuilderContext
+): InteractionTemplate | null => {
+  if (ctx.card.interactionTemplate) {
+    return cloneInteractionTemplate(ctx.card.interactionTemplate);
+  }
+  const interactionId = ctx.card.effect.interactionId;
+  if (!interactionId) return null;
+  const builder = INTERACTION_BUILDERS[interactionId];
+  if (!builder) return null;
+  const template = builder(ctx);
+  return template ? cloneInteractionTemplate(template) : null;
+};
+
 const executeScriptEffect = (
   state: GameState,
   actor: PlayerState,
@@ -568,6 +740,26 @@ const executeScriptEffect = (
   };
 
   switch (scriptId) {
+    case "math.add": {
+      const amount = getNumberParam("value", card.effect.value ?? 0);
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const before = target.score.clone();
+        target.score.addReal(amount);
+        logTransition(target, before, `通过 ${card.name} +${amount}`);
+      });
+      break;
+    }
+    case "math.multiply": {
+      const factor = getNumberParam("factor", card.effect.value ?? 1);
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const before = target.score.clone();
+        target.score.multiplyScalar(factor);
+        logTransition(target, before, `通过 ${card.name} 乘以 ${factor}`);
+      });
+      break;
+    }
     case "math.divide": {
       const divisorRaw = Math.trunc(card.effect.value ?? 1);
       const safeDivisor = divisorRaw === 0 ? 1 : Math.abs(divisorRaw);
@@ -912,6 +1104,105 @@ const executeScriptEffect = (
       );
       break;
     }
+    case "collection.addChar": {
+      const char = params.char ?? card.name.charAt(0) ?? "字";
+      addCollectionCharacter(actor, char, {
+        description: params.description,
+        icon: params.icon,
+      });
+      messages.push(`${actor.logPrefix} 收集到汉字「${char}」。`);
+      break;
+    }
+    case "key.add": {
+      const keyType = params.type ?? "simple";
+      addKeyBuff(actor, keyType, {
+        name: params.name,
+        description: params.description,
+        icon: params.icon,
+      });
+      messages.push(`${actor.logPrefix} 获得 ${keyType} 钥匙。`);
+      break;
+    }
+    case "key.consume": {
+      const keyType = params.type ?? "simple";
+      const ok = consumeKeyBuff(actor, keyType, Number(params.amount ?? 1));
+      if (ok) {
+        messages.push(`${actor.logPrefix} 消耗了 ${keyType} 钥匙。`);
+      } else {
+        messages.push(`${actor.logPrefix} 没有 ${keyType} 钥匙可供消耗。`);
+      }
+      break;
+    }
+    case "collection.countToScore": {
+      const per = Number(params.per ?? card.effect.value ?? 0);
+      const count = countCollectedCharacters(actor);
+      if (count <= 0 || per === 0) {
+        messages.push(`${actor.logPrefix} 还没有收藏任何汉字。`);
+        break;
+      }
+      const gain = per * count;
+      const before = actor.score.clone();
+      actor.score.addReal(gain);
+      logTransition(
+        actor,
+        before,
+        `凭借 ${count} 个汉字，每个奖励 ${per}`
+      );
+      break;
+    }
+    case "math.abs": {
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const before = target.score.clone();
+        const transformed = Math.abs(before.real);
+        target.score.set(transformed, 0);
+        logTransition(target, before, `通过 ${card.name} 取绝对值`);
+      });
+      break;
+    }
+    case "math.squareRootChain":
+    case "legacy.makeAChoice.squareRoot": {
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const before = target.score.clone();
+        const squared = before.real * before.real;
+        const transformed = Math.sqrt(Math.abs(squared));
+        target.score.set(transformed, 0);
+        logTransition(target, before, `通过 ${card.name} 先平方后开根`);
+      });
+      break;
+    }
+    case "math.randomZeroClamp":
+    case "legacy.ranZero": {
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const before = target.score.clone();
+        const min = Math.min(0, before.real);
+        const max = Math.max(0, before.real);
+        const span = max - min;
+        const roll = span === 0 ? 0 : nextRandomFloat(state);
+        const value = span === 0 ? min : min + span * roll;
+        target.score.set(value, 0);
+        logTransition(
+          target,
+          before,
+          `通过 ${card.name} 在区间 [${min.toFixed(2)}, ${max.toFixed(2)}] 随机取值`
+        );
+      });
+      break;
+    }
+    case "legacy.ansSixCycle":
+    case "math.ansSixCycle": {
+      const targets = resolveEffectTargets(actor, opponent, card.effect.target);
+      targets.forEach((target) => {
+        const before = target.score.clone();
+        const ansReal = before.real;
+        const transformed = ((ansReal - 6) * 6 + 6) / 6;
+        target.score.set(transformed, 0);
+        logTransition(target, before, `通过 ${card.name} 触发 (((Ans-6)*6)+6)/6`);
+      });
+      break;
+    }
     default: {
       messages.push(
         `${card.name} 的特殊脚本 ${scriptId || "(未指定)"} 尚未实现。`
@@ -1015,8 +1306,10 @@ const applyCardTo = (
       const value = card.effect.value ?? 1;
       // allow optional color in notes for generic victoryShard cards
       const localParams = parseEffectNotes(card.effect.notes);
-      const scriptMessages = executeScriptEffect(state, actor, opponent, card);
-      messages.push(...scriptMessages);
+      if (card.effect.script) {
+        const scriptMessages = executeScriptEffect(state, actor, opponent, card);
+        messages.push(...scriptMessages);
+      }
       const color = localParams.color ?? "命运";
       const newCt = addShardsTo(actor, color, value);
       messages.push(
@@ -1076,6 +1369,27 @@ const applyCardTo = (
     case "script": {
       const scriptMessages = executeScriptEffect(state, actor, opponent, card);
       messages.push(...scriptMessages);
+      break;
+    }
+    case "interactive": {
+      const ownerIndex = state.players.indexOf(actor);
+      const template = resolveInteractionTemplate({
+        state,
+        actor,
+        opponent,
+        card,
+      });
+      if (!template) {
+        messages.push(`${card.name} 缺少交互模板，效果未生效。`);
+        break;
+      }
+      spawnInteractionRequest(state, {
+        ownerIndex: ownerIndex >= 0 ? ownerIndex : state.currentPlayerIndex,
+        card,
+        template,
+        resumeFrom: state.subPhase ?? "awaitAction",
+      });
+      messages.push(`${actor.logPrefix} 正在处理 ${card.name} 的抉择…`);
       break;
     }
     case "none":
@@ -1174,16 +1488,92 @@ export const playActiveCard = (
   // Buff: before play
   player.buffs.forEach((b) => b.onBeforePlay?.(player, state, card));
   const messages = applyCardTo(state, player, opponent, card);
-  addCardToDiscard(state, card);
-  state.activeCard = undefined;
+  const awaitingInteraction =
+    state.pendingInteraction?.sourceCard.instanceId === card.instanceId;
+  if (!awaitingInteraction) {
+    addCardToDiscard(state, card);
+    state.activeCard = undefined;
+  }
   // Buff: after play
   player.buffs.forEach((b) => b.onAfterPlay?.(player, state, card));
   messages.forEach((message) => appendLog(state, message));
   // 自动推进回合子阶段（awaitAction -> turnEnd）
-  nextSubPhase(state);
+  if (!awaitingInteraction) {
+    nextSubPhase(state);
+  } else {
+    setSubPhase(state, "resolvingInteraction");
+  }
   return {
     state,
     appliedCard: card,
+    messages,
+  };
+};
+
+export const resolveInteractionOption = (
+  sourceState: GameState,
+  optionId: string
+): EngineOutcome<ActionResult> => {
+  if (!sourceState.pendingInteraction) {
+    return {
+      type: "invalidPhase",
+      message: "当前没有需要处理的交互。",
+    };
+  }
+  const state = cloneState(sourceState);
+  const interaction = state.pendingInteraction;
+  if (!interaction) {
+    return {
+      type: "invalidPhase",
+      message: "交互状态已被清除，请重试。",
+    };
+  }
+  const option = interaction.options.find((opt) => opt.id === optionId);
+  if (!option) {
+    return {
+      type: "invalidPhase",
+      message: "交互选项不存在。",
+    };
+  }
+  const actor = state.players[interaction.ownerIndex];
+  const opponent =
+    state.players[(interaction.ownerIndex + 1) % state.players.length];
+  const optionEffects = Array.isArray(option.effect)
+    ? option.effect.map((effect) => ({ ...effect }))
+    : option.effect
+    ? [{ ...option.effect }]
+    : [];
+  if (option.resultScript) {
+    optionEffects.push({
+      type: "script",
+      script: option.resultScript,
+      target: "self",
+    });
+  }
+
+  const messages: string[] = [
+    `${actor.logPrefix} 选择了「${option.label}」`,
+  ];
+
+  optionEffects.forEach((effect, idx) => {
+    const pseudoCard: CardInstance = {
+      ...interaction.sourceCard,
+      instanceId: `${interaction.sourceCard.instanceId}-opt-${idx}`,
+      effect,
+    };
+    const resultMessages = applyCardTo(state, actor, opponent, pseudoCard);
+    messages.push(...resultMessages);
+  });
+
+  state.pendingInteraction = null;
+  addCardToDiscard(state, interaction.sourceCard);
+  state.activeCard = undefined;
+  state.subPhase = interaction.resumeFromSubPhase;
+  nextSubPhase(state);
+  messages.forEach((message) => appendLog(state, message));
+  return {
+    state,
+    appliedCard: interaction.sourceCard,
     messages,
   };
 };
@@ -1275,6 +1665,7 @@ export const releaseHoldCard = (
   const state = cloneState(sourceState);
   const holdCard = removeTopHoldCard(state.players[state.currentPlayerIndex])!;
   setSubPhase(state, "releaselingHoldCard");
+  state.activeCard = holdCard;
   // Buff: before release
   player.buffs.forEach((b) => b.onBeforeRelease?.(player, state, holdCard));
   const opponent =
@@ -1285,12 +1676,21 @@ export const releaseHoldCard = (
     opponent,
     holdCard
   );
-  addCardToDiscard(state, holdCard);
+  const awaitingInteraction =
+    state.pendingInteraction?.sourceCard.instanceId === holdCard.instanceId;
+  if (!awaitingInteraction) {
+    addCardToDiscard(state, holdCard);
+    state.activeCard = undefined;
+  } else {
+    setSubPhase(state, "resolvingInteraction");
+  }
   messages.forEach((message) => appendLog(state, message));
   // Buff: after release
   player.buffs.forEach((b) => b.onAfterRelease?.(player, state, holdCard));
   // 回到可继续处理滞留或抽卡
-  nextSubPhase(state); // releaselingHoldCard -> awaitHoldChoice
+  if (!awaitingInteraction) {
+    nextSubPhase(state); // releaselingHoldCard -> awaitHoldChoice
+  }
   return {
     state,
     appliedCard: holdCard,
@@ -1528,6 +1928,10 @@ const decideAiAction = (
 
 export const finishPlayerTurn = (sourceState: GameState): GameState => {
   if (sourceState.phase !== "playerTurn") {
+    return sourceState;
+  }
+  if (sourceState.pendingInteraction) {
+    appendLog(sourceState, "当前有待处理的选择，无法结束回合。");
     return sourceState;
   }
   if (sourceState.activeCard) {
