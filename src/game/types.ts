@@ -1,15 +1,7 @@
-import { ComplexScore } from "./ComplexScore";
-export type CardColor =
-  | "black"
-  | "blue"
-  | "red"
-  | "golden"
-  | "colorless";
+export type CardColor = "black" | "blue" | "red" | "golden" | "colorless";
 
 export type EffectType =
-  | "add"
-  | "multiply"
-  | "divide"
+  | "math"
   | "set"
   | "reset"
   | "extraDraw"
@@ -27,18 +19,48 @@ export type EffectType =
 
 export type TargetType = "self" | "opponent" | "both";
 
-export type Rarity = "common" | "uncommon" | "rare" | "legendary";
+export type Rarity =
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5
+  | "common"
+  | "uncommon"
+  | "rare"
+  | "legendary"
+  | "mythic";
+
+export interface State {
+  self: CardDefinition;
+  G_state: GameState;
+  P_state: PlayerState;
+  OP_state?: PlayerState;
+  C_current?: CardInstance;
+}
+
+export type SituationFunction<R = void> = R | ((state: State) => R);
+
+// effect中用到的数值, 因为可能收到各种影响, 所以用一个字典来存储原本的数值和各种修改后的数值, 以及修改的来源
+export type EffectValue = {
+  type: string[];
+  base: number;
+  modified?: number;
+  sources?: string[];
+};
 
 export interface CardEffect {
   type: EffectType;
   target?: TargetType;
-  value?: number;
-  minValue?: number;
-  maxValue?: number;
-  carryOver?: boolean;
-  notes?: string;
-  script?: string;
-  interactionId?: string;
+  valueDict: Record<string, EffectValue>;
+  notes?: string | SituationFunction<string>;
+  onCreate?: SituationFunction<void>;
+  onDisplay?: SituationFunction<void>;
+  onDraw?: SituationFunction<void>;
+  onPlay?: SituationFunction<void>;
+  onDiscard?: SituationFunction<void>;
+  onStash?: SituationFunction<void>;
+  interactionAPI?: any;
 }
 
 export interface CardLogicConfig {
@@ -49,35 +71,129 @@ export interface CardLogicConfig {
   disableAIInteraction?: boolean;
 }
 
-export interface CardDefinition {
-  id: string;
-  name: string;
-  description: string;
-  keywords?: string[];
-  rarity: Rarity;
-  levelRange: [number, number];
-  baseWeight: number;
-  maxCopies?: number;
-  effect: CardEffect;
-  tags?: string[];
-  color?: CardColor;
-  logic?: CardLogicConfig;
-  interactionTemplate?: InteractionTemplate;
+export class CardDefinition {
+  C_id: string;
+  C_name: string;
+  C_description?: string;
+  C_keywords?: string[];
+  C_rarity: Rarity;
+  C_color?: CardColor;
+  C_levelRange: [number, number];
+  C_baseWeight: number;
+  C_effect: CardEffect;
+  C_restriction?: CardLogicConfig;
+  C_interactionTemplate?: InteractionTemplate;
+
+  constructor(params: {
+    C_id: string;
+    C_name: string;
+    C_description?: string;
+    C_keywords?: string[];
+    C_rarity: Rarity;
+    C_color?: CardColor;
+    C_levelRange?: [number, number];
+    C_baseWeight?: number;
+    C_effect: CardEffect;
+    C_restriction?: CardLogicConfig;
+    C_interactionTemplate?: InteractionTemplate;
+  }) {
+    this.C_id = params.C_id;
+    this.C_name = params.C_name;
+    this.C_description = params.C_description;
+    this.C_keywords = params.C_keywords;
+    this.C_rarity = params.C_rarity;
+    this.C_color = params.C_color;
+    this.C_levelRange = params.C_levelRange ?? [1, Infinity];
+    this.C_baseWeight = params.C_baseWeight ?? 1;
+    this.C_effect = params.C_effect;
+    this.C_restriction = params.C_restriction;
+    this.C_interactionTemplate = params.C_interactionTemplate;
+  }
+
+  private resolve<T>(val: SituationFunction<T>, state?: State): T {
+    return typeof val === "function"
+      ? (val as (s: State) => T)(state as State)
+      : (val as T);
+  }
+
+  // 获取在特定情形下的名称文本（如果是函数则执行）
+  getName(state?: State): string {
+    return this.resolve(this.C_name, state);
+  }
+
+  // 获取在特定情形下的描述文本（如果是函数则执行）
+  getDescription(state?: State): string {
+    if (!this.C_description) return "";
+    return this.resolve(this.C_description, state);
+  }
+
+  // 快速创建一个 CardInstance（会把定义 id 写入 definitionId，并分配 instanceId）
+  createInstance(instanceId: number): CardInstance {
+    // 把定义的字段拷贝为一个 plain 对象，移除 C_id 并添加实例相关字段
+    const { C_id, ...rest } = this as unknown as Record<string, unknown>;
+
+    return {
+      ...(rest as Omit<CardDefinition, "C_id">),
+      instanceId,
+      definitionId: this.C_id,
+    } as CardInstance;
+  }
+
+  // 可以用来克隆（浅拷贝）定义
+  clone(
+    overrides?: Partial<Omit<CardDefinition, "C_id"> & { C_id?: string }>
+  ): CardDefinition {
+    return new CardDefinition({
+      C_id: overrides?.C_id ?? this.C_id,
+      C_name: (overrides && (overrides as any).C_name) ?? this.C_name,
+      C_description:
+        (overrides && (overrides as any).C_description) ?? this.C_description,
+      C_keywords: overrides?.C_keywords ?? this.C_keywords,
+      C_rarity: (overrides && (overrides as any).C_rarity) ?? this.C_rarity,
+      C_color: overrides?.C_color ?? this.C_color,
+      C_levelRange: overrides?.C_levelRange ?? this.C_levelRange,
+      C_baseWeight: overrides?.C_baseWeight ?? this.C_baseWeight,
+      C_effect: (overrides && (overrides as any).C_effect) ?? this.C_effect,
+      C_restriction: overrides?.C_restriction ?? this.C_restriction,
+      C_interactionTemplate:
+        overrides?.C_interactionTemplate ?? this.C_interactionTemplate,
+    });
+  }
 }
 
-export interface CardInstance {
-  instanceId: string;
-  definitionId: string;
-  name: string;
-  description: string;
-  keywords: string[];
-  rarity: Rarity;
-  effect: CardEffect;
-  tags: string[];
-  color?: CardColor;
-  logic?: CardLogicConfig;
-  interactionTemplate?: InteractionTemplate;
+export interface CardPayload {
+  C_id: string;
+  C_name: string;
+  C_description?: string;
+  C_keywords?: string[];
+  C_rarity: Rarity;
+  C_color?: CardColor;
+  C_levelRange?: [number, number];
+  C_baseWeight?: number;
+  C_effect: CardEffect;
+  C_restriction?: CardLogicConfig;
+  C_interactionTemplate?: InteractionTemplate;
 }
+
+export const createCard = (def: CardPayload): CardDefinition =>
+  new CardDefinition({
+    C_id: def.C_id,
+    C_name: def.C_name,
+    C_description: def.C_description,
+    C_keywords: def.C_keywords,
+    C_rarity: def.C_rarity,
+    C_color: def.C_color,
+    C_levelRange: def.C_levelRange ?? [1, Infinity],
+    C_baseWeight: def.C_baseWeight ?? 1,
+    C_effect: def.C_effect,
+    C_restriction: def.C_restriction,
+    C_interactionTemplate: def.C_interactionTemplate,
+  });
+
+export type CardInstance = Omit<CardDefinition, "C_id"> & {
+  instanceId: number;
+  definitionId: CardDefinition["C_id"];
+};
 
 export interface DeckState {
   originalDeckSize: number;
@@ -91,15 +207,12 @@ export interface DeckState {
 
 export interface PlayerState {
   label: string;
-  score: ComplexScore;
+  score: number;
   drawsUsed: number;
-  maxDraws: number;
+  baseDraws: number;
   extraDraws: number;
   holdSlots: CardInstance[];
   backpack: CardInstance[];
-  /**
-   * 胜利碎片按颜色/类型计数，例如 { "湛蓝": 1, "赤红": 2 }
-   */
   victoryShards: Record<string, number>;
   wins: number;
   passTokens: Array<{ level: number; threshold: number }>;
@@ -115,6 +228,7 @@ export interface PlayerState {
 // 顶层阶段（Level Phase）
 // levelStart -> playerTurn -> finishRound(levelEnd) -> finishLevel -> merchant/next level -> ... -> matchEnd
 export type GamePhase =
+  | "matchSetup"
   | "levelStart"
   | "playerTurn"
   | "finishRound" // 等价于 levelEnd：整轮已结束，等待结算
@@ -122,101 +236,35 @@ export type GamePhase =
   | "merchant"
   | "matchEnd";
 
-export type MerchantCostType =
-  | "scorePenalty"
-  | "nextDrawPenalty"
-  | "startScorePenalty";
-
-export interface MerchantCost {
-  type: MerchantCostType;
-  value: number;
-  description: string;
-  severity: "mild" | "moderate" | "severe";
-}
-
-export interface MerchantOffer {
-  card: CardInstance;
-  cost: MerchantCost;
-}
-
-export type PendingEffect =
-  | { type: "nextDrawPenalty"; value: number }
-  | { type: "startScorePenalty"; value: number };
+export type PlayerBuffCategory =
+  | "buff"
+  | "debuff"
+  | "collection"
+  | "statusChange";
 
 export interface PlayerBuff {
-  id: string;
-  name: string;
-  description: string;
+  id: number;
+  name: string | SituationFunction<string>;
+  description: string | SituationFunction<string>;
   icon: string;
-  effect: CardEffect;
   isPermanent: boolean;
-  count: number;
-  category?: "buff" | "debuff" | "collection" | "key" | "status";
-  meta?: BuffMetadata;
   duration?: number;
+  count?: number;
+  category?: PlayerBuffCategory | PlayerBuffCategory[];
+  valueDict?: Record<string, number>;
   maxStacks?: number;
-  // 新增：阶段触发器
-  onTurnStart?: (player: PlayerState, game: GameState) => void;
-  onTurnEnd?: (player: PlayerState, game: GameState) => void;
-  // 新增：数值修饰器
-  valueModifier?: (value: number) => number;
-  multiplierModifier?: (multiplier: number) => number;
-  // 新增：行动与卡牌回调（可选）
-  onBeforeDraw?: (player: PlayerState, game: GameState) => void;
-  onAfterDraw?: (
-    player: PlayerState,
-    game: GameState,
-    card: CardInstance
-  ) => void;
-  onBeforePlay?: (
-    player: PlayerState,
-    game: GameState,
-    card: CardInstance
-  ) => void;
-  onAfterPlay?: (
-    player: PlayerState,
-    game: GameState,
-    card: CardInstance
-  ) => void;
-  onBeforeDiscard?: (
-    player: PlayerState,
-    game: GameState,
-    card: CardInstance
-  ) => void;
-  onAfterDiscard?: (
-    player: PlayerState,
-    game: GameState,
-    card: CardInstance
-  ) => void;
-  onBeforeStash?: (
-    player: PlayerState,
-    game: GameState,
-    card: CardInstance
-  ) => void;
-  onAfterStash?: (
-    player: PlayerState,
-    game: GameState,
-    card: CardInstance
-  ) => void;
-  onBeforeRelease?: (
-    player: PlayerState,
-    game: GameState,
-    card: CardInstance
-  ) => void;
-  onAfterRelease?: (
-    player: PlayerState,
-    game: GameState,
-    card: CardInstance
-  ) => void;
-}
-
-export interface BuffMetadata {
-  char?: string;
-  color?: CardColor;
-  sequenceIndex?: number;
-  storedValue?: number;
-  payload?: Record<string, unknown>;
-  [key: string]: string | number | boolean | Record<string, unknown> | undefined;
+  onTurnStart?: SituationFunction<void>;
+  onTurnEnd?: SituationFunction<void>;
+  onBeforeDraw?: SituationFunction<void>;
+  onAfterDraw?: SituationFunction<void>;
+  onBeforePlay?: SituationFunction<void>;
+  onAfterPlay?: SituationFunction<void>;
+  onBeforeDiscard?: SituationFunction<void>;
+  onAfterDiscard?: SituationFunction<void>;
+  onBeforeStash?: SituationFunction<void>;
+  onAfterStash?: SituationFunction<void>;
+  onBeforeRelease?: SituationFunction<void>;
+  onAfterRelease?: SituationFunction<void>;
 }
 
 export type InteractionType = "choice" | "payment" | "gamble" | "miniGame";
