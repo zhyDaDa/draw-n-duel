@@ -12,6 +12,7 @@ import { getLevelConfig } from "../game/levels";
 import LevelResultModal from "../components/LevelResultModal";
 import PhaseIntroModal from "../components/PhaseIntroModal";
 import InteractionModal from "../components/InteractionModal";
+import DeckBrowserModal from "../components/DeckBrowserModal";
 import {
   acceptMerchantOffer,
   createInitialState,
@@ -83,6 +84,7 @@ const GamePlayPage: React.FC = () => {
   const [aiBusy, setAiBusy] = useState(false);
   const [showLevelResult, setShowLevelResult] = useState(false);
   const [showPhaseIntro, setShowPhaseIntro] = useState(false);
+  const [showDeckModal, setShowDeckModal] = useState(false);
   const phaseIntroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interactionAutoRef = useRef<string | null>(null);
 
@@ -568,6 +570,17 @@ const GamePlayPage: React.FC = () => {
         })
       )
     : [];
+  const deckPerspectivePlayer = currentPlayer ?? gameState.players[0];
+  const deckCardStates = deckPerspectivePlayer
+    ? gameState.deck.drawPile.map((card) =>
+        buildCardSituationState({
+          state: gameState,
+          player: deckPerspectivePlayer,
+          opponent: undefined,
+          card,
+        })
+      )
+    : [];
   const canPlay = Boolean(activeCard);
   const canStash =
     Boolean(activeCard) && holdSlots.length < currentPlayer.MAX_HOLD_SLOTS;
@@ -844,6 +857,7 @@ const GamePlayPage: React.FC = () => {
                 interactionOwner?.logPrefix ?? interactionOwner?.label
               }
               isInteractionOwner={isLocalInteractionOwner}
+              onDeckClick={() => setShowDeckModal(true)}
             />
           </section>
         </div>
@@ -865,6 +879,11 @@ const GamePlayPage: React.FC = () => {
         offers={gameState.merchantOffers}
         onAccept={handleAcceptMerchant}
         onSkip={handleSkipMerchant}
+      />
+      <DeckBrowserModal
+        open={showDeckModal}
+        onClose={() => setShowDeckModal(false)}
+        cards={deckCardStates}
       />
       <LevelResultModal
         open={showLevelResult}

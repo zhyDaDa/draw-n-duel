@@ -35,6 +35,7 @@ interface CardLaneProps {
   pendingInteraction?: InteractionRequest | null;
   interactionOwnerName?: string;
   isInteractionOwner?: boolean;
+  onDeckClick?: () => void;
 }
 
 type GhostCard = {
@@ -124,6 +125,7 @@ const CardLane: React.FC<CardLaneProps> = ({
   pendingInteraction,
   interactionOwnerName,
   isInteractionOwner = false,
+  onDeckClick,
 }) => {
   const [ghostCard, setGhostCard] = useState<GhostCard | null>(null);
   const [stackShiftKey, setStackShiftKey] = useState<number | null>(null);
@@ -264,7 +266,19 @@ const CardLane: React.FC<CardLaneProps> = ({
 
   return (
     <section className="card-lane" aria-label="卡牌分区">
-      <div className="card-slot card-slot--deck">
+      <div
+        className="card-slot card-slot--deck"
+        role={onDeckClick ? "button" : undefined}
+        tabIndex={onDeckClick ? 0 : undefined}
+        onClick={onDeckClick}
+        onKeyDown={(event) => {
+          if (!onDeckClick) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onDeckClick();
+          }
+        }}
+      >
         <Tooltip
           title={renderDeckTooltip(deckStats)}
           placement="top"
