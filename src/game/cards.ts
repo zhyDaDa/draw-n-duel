@@ -1,14 +1,37 @@
 import { CARD_LIBRARY } from "./CARD_LIBRARY";
 import {
   CardDefinition,
+  type CardEffect,
   type CardInstance,
+  type EffectValue,
   createCard,
 } from "./types";
 
 let instanceCounter = 1;
 
-export const createCardInstance = (definition: CardDefinition): CardInstance =>
-  definition?.createInstance(instanceCounter++);
+const cloneEffectValue = (value: EffectValue): EffectValue => ({
+  ...value,
+  type: [...value.type],
+  sources: value.sources ? [...value.sources] : undefined,
+});
+
+const cloneCardEffect = (effect: CardEffect): CardEffect => ({
+  ...effect,
+  valueDict: Object.fromEntries(
+    Object.entries(effect.valueDict ?? {}).map(([key, val]) => [
+      key,
+      cloneEffectValue(val),
+    ])
+  ),
+});
+
+export const createCardInstance = (definition: CardDefinition): CardInstance => {
+  const instance = definition?.createInstance(instanceCounter++);
+  if (instance?.C_effect) {
+    instance.C_effect = cloneCardEffect(instance.C_effect);
+  }
+  return instance;
+};
 
 export const MERCHANT_EXCLUSIVE: CardDefinition[] = [
   createCard({
