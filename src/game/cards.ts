@@ -25,7 +25,9 @@ const cloneCardEffect = (effect: CardEffect): CardEffect => ({
   ),
 });
 
-export const createCardInstance = (definition: CardDefinition): CardInstance => {
+export const createCardInstance = (
+  definition: CardDefinition
+): CardInstance => {
   const instance = definition?.createInstance(instanceCounter++);
   if (instance?.C_effect) {
     instance.C_effect = cloneCardEffect(instance.C_effect);
