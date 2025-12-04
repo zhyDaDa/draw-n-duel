@@ -383,31 +383,33 @@ export function nextSubPhase(state: GameState): void {
   const from = state.subPhase;
 
   switch (state.subPhase) {
-    case undefined:
+    case undefined: {
+      state.subPhase = "turnStart";
+      break;
+    }
     case "turnStart": {
       player.buffs.forEach((buff) =>
         invokeBuffHook(buff, "onTurnStart", state, player, opponent)
       );
-      state.subPhase = "awaitHoldChoice";
+      state.subPhase = "checkCanDraw";
       break;
     }
-    case "awaitHoldChoice": {
-      state.subPhase = "drawingCard";
+    case "checkCanDraw": {
+      state.subPhase = "prepareDrawingCard";
       break;
     }
-    case "drawingCard": {
-      state.subPhase = "awaitAction";
+    case "prepareDrawingCard":
+    case "waitingDrawChoice":
+    case "awaitMerchantSelection":
+    case "resolvingInteraction": {
       break;
     }
-    case "releaselingHoldCard":
-    case "discardingHoldCard": {
-      state.subPhase = "awaitHoldChoice";
+    case "onUseCard":
+    case "onStashCard": {
+      state.subPhase = "preTurnEnd";
       break;
     }
-    case "stashingCard":
-    case "playingCard":
-    case "discardingCard":
-    case "awaitAction": {
+    case "preTurnEnd": {
       state.subPhase = "turnEnd";
       break;
     }
@@ -419,19 +421,15 @@ export function nextSubPhase(state: GameState): void {
         appendLog(state, "所有玩家抽牌机会已用尽，进入本轮结算。");
         setLevelPhase(state, "finishRound");
       } else {
-        state.subPhase = "nextPlayerTurnStart";
+        const previous = player;
+        const nextIndex = setNextPlayerAsCurrent(state);
+        const nextPlayer = state.players[nextIndex];
+        appendLog(
+          state,
+          `${previous.logPrefix} 回合结束，轮到 ${nextPlayer.logPrefix}。`
+        );
+        state.subPhase = "turnStart";
       }
-      break;
-    }
-    case "nextPlayerTurnStart": {
-      const previous = player;
-      const nextIndex = setNextPlayerAsCurrent(state);
-      const nextPlayer = state.players[nextIndex];
-      appendLog(
-        state,
-        `${previous.logPrefix} 回合结束，轮到 ${nextPlayer.logPrefix}。`
-      );
-      state.subPhase = "turnStart";
       break;
     }
     default: {
@@ -456,7 +454,11 @@ export function setSubPhase(
 export const drawCard = (
   sourceState: GameState
 ): EngineOutcome<DrawResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn", "drawingCard");
+  const validation = ensurePhase(
+    sourceState,
+    "playerTurn",
+    "prepareDrawingCard"
+  );
   if (validation) return validation;
   if (sourceState.deck.drawPile.length === 0) {
     return { type: "emptyDeck", message: "当前牌堆已空。" };
@@ -483,16 +485,21 @@ export const drawCard = (
   );
   invokeCardHook(card, "onDraw", state, player, opponent);
 
-  appendLog(state, `${player.logPrefix} 抽到了 ${card.C_name}`);
-  setSubPhase(state, "awaitAction");
+  const log = `${player.logPrefix} 抽取了 ${card.C_name}。`;
+  appendLog(state, log);
+  setSubPhase(state, "waitingDrawChoice");
 
-  return { state, drawnCard: card };
+  return { state, drawnCard: card, messsages: [log] };
 };
 
 export const playActiveCard = (
   sourceState: GameState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn");
+  const validation = ensurePhase(
+    sourceState,
+    "playerTurn",
+    "waitingDrawChoice"
+  );
   if (validation) return validation;
   if (!sourceState.activeCard) {
     return {
@@ -516,9 +523,9 @@ export const playActiveCard = (
   player.buffs.forEach((buff) =>
     invokeBuffHook(buff, "onBeforePlay", state, player, opponent, card)
   );
-  setSubPhase(state, "playingCard");
+  setSubPhase(state, "onUseCard");
 
-  const messages = applyCardTo(state, player, opponent, card, "awaitAction");
+  const messages = applyCardTo(state, player, opponent, card, "onUseCard");
   const awaitingInteraction =
     state.pendingInteraction?.sourceCard.instanceId === card.instanceId;
 
@@ -528,7 +535,7 @@ export const playActiveCard = (
     player.buffs.forEach((buff) =>
       invokeBuffHook(buff, "onAfterPlay", state, player, opponent, card)
     );
-    setSubPhase(state, "awaitAction");
+    setSubPhase(state, "onUseCard");
     nextSubPhase(state);
   }
 
@@ -573,7 +580,13 @@ export const resolveInteractionOption = (
   addCardToDiscard(state, interaction.sourceCard);
   state.activeCard = undefined;
   state.subPhase = interaction.resumeFromSubPhase;
-  nextSubPhase(state);
+  if (
+    state.subPhase === "onUseCard" ||
+    state.subPhase === "onStashCard" ||
+    state.subPhase === "preTurnEnd"
+  ) {
+    nextSubPhase(state);
+  }
 
   return {
     state,
@@ -585,7 +598,11 @@ export const resolveInteractionOption = (
 export const stashActiveCard = (
   sourceState: GameState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn", "awaitAction");
+  const validation = ensurePhase(
+    sourceState,
+    "playerTurn",
+    "waitingDrawChoice"
+  );
   if (validation) return validation;
   if (!sourceState.activeCard) {
     return {
@@ -626,7 +643,7 @@ export const stashActiveCard = (
     invokeBuffHook(buff, "onAfterStash", state, player, opponent, activeCard)
   );
 
-  setSubPhase(state, "stashingCard");
+  setSubPhase(state, "onStashCard");
   nextSubPhase(state);
   return {
     state,
@@ -637,7 +654,11 @@ export const stashActiveCard = (
 export const discardActiveCard = (
   sourceState: GameState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn", "awaitAction");
+  const validation = ensurePhase(
+    sourceState,
+    "playerTurn",
+    "waitingDrawChoice"
+  );
   if (validation) return validation;
   if (!sourceState.activeCard) {
     return {
@@ -658,7 +679,7 @@ export const discardActiveCard = (
     };
   }
 
-  setSubPhase(state, "discardingCard");
+  setSubPhase(state, "onUseCard");
   invokeCardHook(activeCard, "onDiscard", state, player, opponent);
   addCardToDiscard(state, activeCard);
   appendLog(state, `${player.logPrefix} 丢弃了 ${activeCard.C_name}`);
@@ -677,7 +698,7 @@ export const releaseHoldCard = (
   const validation = ensurePhase(
     sourceState,
     "playerTurn",
-    "awaitHoldChoice"
+    "checkCanDraw"
   );
   if (validation) return validation;
   const player = sourceState.players[sourceState.currentPlayerIndex];
@@ -700,13 +721,18 @@ export const releaseHoldCard = (
     state.players[(state.currentPlayerIndex + 1) % state.players.length];
   const holdCard = removeTopHoldCard(actor)!;
 
-  setSubPhase(state, "releaselingHoldCard");
   state.activeCard = holdCard;
   actor.buffs.forEach((buff) =>
     invokeBuffHook(buff, "onBeforePlay", state, actor, opponent, holdCard)
   );
 
-  const messages = applyCardTo(state, actor, opponent, holdCard, "awaitHoldChoice");
+  const messages = applyCardTo(
+    state,
+    actor,
+    opponent,
+    holdCard,
+    "checkCanDraw"
+  );
   const awaitingInteraction =
     state.pendingInteraction?.sourceCard.instanceId === holdCard.instanceId;
 
@@ -716,7 +742,7 @@ export const releaseHoldCard = (
     actor.buffs.forEach((buff) =>
       invokeBuffHook(buff, "onAfterPlay", state, actor, opponent, holdCard)
     );
-    setSubPhase(state, "awaitHoldChoice");
+    setSubPhase(state, "checkCanDraw");
   }
 
   messages.forEach((message) => appendLog(state, message));
@@ -733,7 +759,7 @@ export const discardHoldCard = (
   const validation = ensurePhase(
     sourceState,
     "playerTurn",
-    "awaitHoldChoice"
+    "checkCanDraw"
   );
   if (validation) return validation;
   const player = sourceState.players[sourceState.currentPlayerIndex];
@@ -750,11 +776,10 @@ export const discardHoldCard = (
   const opponent =
     state.players[(state.currentPlayerIndex + 1) % state.players.length];
 
-  setSubPhase(state, "discardingHoldCard");
   invokeCardHook(holdCard, "onDiscard", state, actor, opponent);
   addCardToDiscard(state, holdCard);
   appendLog(state, `${actor.logPrefix} 丢弃了滞留牌 ${holdCard.C_name}`);
-  setSubPhase(state, "awaitHoldChoice");
+  setSubPhase(state, "checkCanDraw");
 
   return {
     state,
@@ -791,10 +816,10 @@ export const advanceSubPhase = (sourceState: GameState): GameState => {
 export const beginNextPlayerTurn = (sourceState: GameState): GameState => {
   const state = cloneState(sourceState);
   if (state.phase !== "playerTurn") return state;
-  if (state.subPhase === "nextPlayerTurnStart") {
+  if (state.subPhase === undefined) {
     nextSubPhase(state);
   }
-  if (state.subPhase === undefined || state.subPhase === "turnStart") {
+  if (state.subPhase === "turnStart") {
     nextSubPhase(state);
   }
   return state;

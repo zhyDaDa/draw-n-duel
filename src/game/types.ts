@@ -333,16 +333,13 @@ export interface GameState {
   winner?: string;
   subPhase?:
     | "turnStart"
-    | "awaitHoldChoice"
-    | "drawingCard"
-    | "awaitAction"
-    | "playingCard"
-    | "stashingCard"
-    | "discardingCard"
+    | "checkCanDraw"
+    | "prepareDrawingCard"
+    | "waitingDrawChoice"
+    | "onUseCard"
+    | "onStashCard"
+    | "preTurnEnd"
     | "turnEnd"
-    | "nextPlayerTurnStart"
-    | "releaselingHoldCard"
-    | "discardingHoldCard"
     | "awaitMerchantSelection"
     | "resolvingInteraction";
   rngSeed: number;
@@ -352,6 +349,7 @@ export interface GameState {
 export interface DrawResult {
   state: GameState;
   drawnCard: CardInstance | null;
+  messsages: string[];
 }
 
 export interface ResolveResult {

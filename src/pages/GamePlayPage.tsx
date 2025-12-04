@@ -78,7 +78,7 @@ const GamePlayPage: React.FC = () => {
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoAI, setAutoAI] = useState(true);
   const aiRunningRef = useRef(false);
-    const [aiBusy, setAiBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
   const [showLevelResult, setShowLevelResult] = useState(false);
   const [showPhaseIntro, setShowPhaseIntro] = useState(false);
   const phaseIntroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -154,7 +154,7 @@ const GamePlayPage: React.FC = () => {
 
     const getDrawsRemaining = (s: GameState) => {
       const p = s.players[s.currentPlayerIndex];
-      return p.maxDraws + p.extraDraws - p.drawsUsed;
+      return p.baseDraws + p.extraDraws - p.drawsUsed;
     };
 
     const runAiTurn = async () => {
@@ -168,12 +168,7 @@ const GamePlayPage: React.FC = () => {
       aiRunningRef.current = true;
       setAiBusy(true);
       try {
-
-        if (
-          s.subPhase === "nextPlayerTurnStart" ||
-          s.subPhase === "turnStart" ||
-          s.subPhase === undefined
-        ) {
+        if (s.subPhase === "turnStart" || s.subPhase === undefined) {
           s = beginNextPlayerTurn(s);
           setGameState(s);
           // 给出一个短的预览动画帧（比之前短一点）再继续 AI 逻辑
@@ -184,10 +179,10 @@ const GamePlayPage: React.FC = () => {
           s.players[(s.currentPlayerIndex + 1) % s.players.length];
         const ai = s.players[s.currentPlayerIndex];
 
-        if (s.subPhase === "awaitHoldChoice") {
+        if (s.subPhase === "checkCanDraw") {
           if (
             (ai.holdSlots?.length ?? 0) > 0 &&
-            ai.score.compareMagnitude(opponent.score) < 0 &&
+            ai.score - opponent.score < 0 &&
             !s.activeCard
           ) {
             await performAiOperation(
@@ -206,8 +201,8 @@ const GamePlayPage: React.FC = () => {
 
           const drawsRemaining = getDrawsRemaining(s);
           const canDraw = drawsRemaining > 0 && s.deck.drawPile.length > 0;
-            if (canDraw && s.subPhase === "awaitHoldChoice" && !s.activeCard) {
-            const check = ensurePhase(s, "playerTurn", "awaitHoldChoice");
+          if (canDraw && s.subPhase === "checkCanDraw" && !s.activeCard) {
+            const check = ensurePhase(s, "playerTurn", "checkCanDraw");
             if (!check) {
               await performAiOperation(
                 () => {
@@ -240,7 +235,7 @@ const GamePlayPage: React.FC = () => {
 
         if (
           s.phase === "playerTurn" &&
-          s.subPhase === "awaitAction" &&
+          s.subPhase === "waitingDrawChoice" &&
           s.activeCard
         ) {
           const card = s.activeCard;
@@ -248,41 +243,8 @@ const GamePlayPage: React.FC = () => {
           const oppNow =
             s.players[(s.currentPlayerIndex + 1) % s.players.length];
           const decide = () => {
-            switch (card.effect.type) {
-              case "victoryShard":
-              case "levelPass":
-              case "shield":
-              case "extraDraw":
-                return "play" as const;
-              case "multiply":
-                if ((aiNow.holdSlots?.length ?? 0) > 0) return "play" as const;
-                if (aiNow.score.compareMagnitude(oppNow.score) < 0)
-                  return "play" as const;
-                return "hold" as const;
-              case "add":
-                return "play" as const;
-              case "reset":
-                return (
-                  aiNow.score.compareMagnitude(
-                    oppNow.score.modulus() * 0.6
-                  ) < 0
-                )
-                  ? ("play" as const)
-                  : ("hold" as const);
-              case "transfer":
-              case "steal":
-                return "play" as const;
-              case "duplicate":
-                return (aiNow.holdSlots?.length ?? 0) > 0
-                  ? ("play" as const)
-                  : ("hold" as const);
-              case "wildcard":
-                return aiNow.score.compareMagnitude(oppNow.score) < 0
-                  ? ("play" as const)
-                  : ("hold" as const);
-              default:
-                return "play" as const;
-            }
+            // AI决策
+            return "play";
           };
           const decision = decide();
           let actionSucceeded = false;
@@ -337,7 +299,6 @@ const GamePlayPage: React.FC = () => {
     }
   }, [autoAI, gameState]);
 
-
   const handleOutcome = (
     outcome: EngineOutcome<ActionResult | ResolveResult>
   ) => {
@@ -348,7 +309,7 @@ const GamePlayPage: React.FC = () => {
     setGameState(outcome.state);
     setStatusMessage(outcome.messages?.join(" ") ?? null);
     setGameState((s) => {
-      if (s.phase === "playerTurn" && s.subPhase === "nextPlayerTurnStart") {
+      if (s.phase === "playerTurn" && s.subPhase === "turnStart") {
         return beginNextPlayerTurn(s);
       }
       return s;
@@ -368,17 +329,23 @@ const GamePlayPage: React.FC = () => {
 
     const pickOption = () => {
       if (!interaction.options.length) return null;
-      return interaction.options.reduce<{ option: (typeof interaction.options)[0]; weight: number } | null>(
-        (best, option) => {
-          const base = option.aiWeight ?? (option.intent === "positive" ? 1.4 : option.intent === "negative" ? 0.6 : 1);
-          const weight = option.autoResolve ? base + 0.5 : base;
-          if (!best || weight > best.weight) {
-            return { option, weight };
-          }
-          return best;
-        },
-        null
-      )?.option;
+      return interaction.options.reduce<{
+        option: (typeof interaction.options)[0];
+        weight: number;
+      } | null>((best, option) => {
+        const base =
+          option.aiWeight ??
+          (option.intent === "positive"
+            ? 1.4
+            : option.intent === "negative"
+            ? 0.6
+            : 1);
+        const weight = option.autoResolve ? base + 0.5 : base;
+        if (!best || weight > best.weight) {
+          return { option, weight };
+        }
+        return best;
+      }, null)?.option;
     };
 
     const chosen = pickOption();
@@ -424,17 +391,17 @@ const GamePlayPage: React.FC = () => {
 
   const handleDraw = () => {
     if (aiBusy || interactionLocked) return;
-    const phaseCheck = ensurePhase(gameState, "playerTurn", "awaitHoldChoice");
+    const phaseCheck = ensurePhase(gameState, "playerTurn", "checkCanDraw");
     if (phaseCheck) {
       setStatusMessage(phaseCheck.message);
       return;
     }
     const drawingState = advanceSubPhase(gameState);
     const result = drawCard(drawingState);
-    if (!isEngineError(result) && result.appliedCard) {
+    if (!isEngineError(result) && result.drawnCard) {
       registerAnimation({
         type: "draw",
-        card: result.appliedCard,
+        card: result.drawnCard,
         timestamp: Date.now(),
       });
     }
@@ -572,31 +539,31 @@ const GamePlayPage: React.FC = () => {
   const canDiscard = Boolean(activeCard);
   const drawDisabled =
     !isPlayerTurn ||
-    gameState.subPhase !== "awaitHoldChoice" ||
+    gameState.subPhase !== "checkCanDraw" ||
     Boolean(activeCard) ||
     aiBusy ||
     interactionLocked;
   const playDisabled =
     !isPlayerTurn ||
-    gameState.subPhase !== "awaitAction" ||
+    gameState.subPhase !== "waitingDrawChoice" ||
     !canPlay ||
     aiBusy ||
     interactionLocked;
   const stashDisabled =
     !isPlayerTurn ||
-    gameState.subPhase !== "awaitAction" ||
+    gameState.subPhase !== "waitingDrawChoice" ||
     !canStash ||
     aiBusy ||
     interactionLocked;
   const discardDisabled =
     !isPlayerTurn ||
-    gameState.subPhase !== "awaitAction" ||
+    gameState.subPhase !== "waitingDrawChoice" ||
     !canDiscard ||
     aiBusy ||
     interactionLocked;
   const releaseDisabled =
     !isPlayerTurn ||
-    gameState.subPhase !== "awaitHoldChoice" ||
+    gameState.subPhase !== "checkCanDraw" ||
     holdSlots.length === 0 ||
     Boolean(activeCard) ||
     aiBusy ||
@@ -626,15 +593,15 @@ const GamePlayPage: React.FC = () => {
   );
 
   const drawsRemaining =
-    (currentPlayer?.maxDraws ?? 0) +
+    (currentPlayer?.baseDraws ?? 0) +
     (currentPlayer?.extraDraws ?? 0) -
     (currentPlayer?.drawsUsed ?? 0);
   const drawButtonLabel = `抽卡 [${currentPlayer?.drawsUsed ?? 0}/${
-    (currentPlayer?.maxDraws ?? 0) + (currentPlayer?.extraDraws ?? 0)
+    (currentPlayer?.baseDraws ?? 0) + (currentPlayer?.extraDraws ?? 0)
   }]`;
 
   const actionButtons = useMemo(() => {
-    if (gameState.subPhase === "awaitHoldChoice") {
+    if (gameState.subPhase === "checkCanDraw") {
       return [
         {
           key: "draw",
@@ -838,7 +805,9 @@ const GamePlayPage: React.FC = () => {
               maxHoldSlots={maxHoldSlots}
               animationEvent={animationEvent}
               pendingInteraction={pendingInteraction}
-              interactionOwnerName={interactionOwner?.logPrefix ?? interactionOwner?.label}
+              interactionOwnerName={
+                interactionOwner?.logPrefix ?? interactionOwner?.label
+              }
               isInteractionOwner={isLocalInteractionOwner}
             />
           </section>
@@ -851,7 +820,9 @@ const GamePlayPage: React.FC = () => {
       <InteractionModal
         interaction={pendingInteraction}
         visible={Boolean(pendingInteraction && isLocalInteractionOwner)}
-        ownerLabel={interactionOwner?.logPrefix ?? interactionOwner?.label ?? "你"}
+        ownerLabel={
+          interactionOwner?.logPrefix ?? interactionOwner?.label ?? "你"
+        }
         onSelect={handleInteractionSelect}
       />
       <MerchantModal

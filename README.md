@@ -78,14 +78,15 @@ src/
 - `GameState.phase`（保留，回合/对局内的粗粒度阶段，向下兼容）: `'playerTurn' | 'finishRound' | 'merchant' | 'matchEnd'`
 - `GameState.subPhase`：
   - `turnStart` → 回合开始，触发当前玩家 Buff 的 `onTurnStart`
-  - `awaitHoldChoice` → 可释放/丢弃滞留或进入抽卡
-  - `releaselingHoldCard` / `discardingHoldCard` → 正在结算/丢弃滞留牌，处理完毕自动返回 `awaitHoldChoice`
-  - `drawingCard` → 进入抽卡动作（动作完成后推进到 `awaitAction`）
-  - `awaitAction` → 对 activeCard 进行“结算/滞留/丢弃”
-  - `turnEnd` → 触发当前玩家 Buff 的 `onTurnEnd`，并在此时统一判断是否整轮结束
-  - `nextPlayerTurnStart` → 切换到下一名玩家并进入其 `turnStart`
+  - `checkCanDraw` → 可释放/丢弃滞留或进入抽卡准备阶段
+  - `prepareDrawingCard` → 抽牌动作的过渡态，随后可调用 `drawCard`
+  - `waitingDrawChoice` → 拿到 activeCard，可选择结算/滞留/丢弃
+  - `onUseCard` / `onStashCard` → 卡牌效果或滞留动作正在结算，结束后进入 `preTurnEnd`
+  - `preTurnEnd` → 本回合的主要操作已完成，等待玩家点击“结束回合”
+  - `turnEnd` → 触发当前玩家 Buff 的 `onTurnEnd`，并在此时统一判断是否整轮结束，必要时切换到下一名玩家的 `turnStart`
+  - `resolvingInteraction` → 存在交互选项待处理，完成后恢复至相应子阶段
 - `GameState.level`: 1-5，半层用 `merchant` phase 标识。
-- `PlayerState`：维护 `score`、`drawsUsed`、`maxDraws`、`extraDraws`、`holdSlots`（滞留栈，LIFO）、`backpack`、`victoryShards`、`wins`、`passTokens`、`buffs` 等。
+- `PlayerState`：维护 `score`、`drawsUsed`、`baseDraws`、`extraDraws`、`holdSlots`（滞留栈，LIFO）、`backpack`、`victoryShards`、`wins`、`passTokens`、`buffs` 等。
 - `DeckState`：`drawPile`、`discardPile`、`publicInfo`（剩余胜利碎片、稀有卡数量）。
 - `LogEntry`：每次子阶段变更都会记录一条：`子阶段: from -> to`。
 
@@ -200,43 +201,44 @@ flowchart TB
 ## 🧠 主要交互逻辑（函数与阶段对应）
 
 - 抽牌：
-  - 在 `awaitHoldChoice` 通过 `advanceSubPhase()` 进入 `drawingCard`，随后调用 `engine.drawCard()` 抽到 `activeCard`，引擎自动推进到 `awaitAction`。
+  - 在 `checkCanDraw` 通过 `advanceSubPhase()` 进入 `prepareDrawingCard`，随后调用 `engine.drawCard()` 抽到 `activeCard`，引擎会将子阶段置为 `waitingDrawChoice` 以便做出决策。
 - 使用当前抽到的卡（activeCard）：
-  - `engine.playActiveCard()`，处理完后 UI 调用 `finishPlayerTurn()` 推进到 `turnEnd`，引擎在此统一判断整轮是否结束，若未结束则进入下一玩家回合。
+  - `engine.playActiveCard()` 仅能在 `waitingDrawChoice` 调用，结算期间会处于 `onUseCard`，完成后自动进入 `preTurnEnd` 等待玩家点击“结束回合”。
 - 将当前抽到的卡滞留：
-  - `engine.stashActiveCard()`，随后 UI 调用 `finishPlayerTurn()` 推进回合。
+  - `engine.stashActiveCard()`（`waitingDrawChoice` 下可用）把卡放入滞留位，随后一样推进到 `preTurnEnd`。
 - 丢弃当前抽到的卡：
-  - `engine.discardActiveCard()`，随后 UI 调用 `finishPlayerTurn()` 推进回合。
+  - `engine.discardActiveCard()` 用于 `waitingDrawChoice`，执行后同样进入 `preTurnEnd`。
 - 释放/丢弃滞留牌：
-  - `engine.releaseHoldCard()` / `engine.discardHoldCard()`，引擎进入 `releaselingHoldCard` / `discardingHoldCard`，处理完毕自动回到 `awaitHoldChoice`。
+  - `engine.releaseHoldCard()` / `engine.discardHoldCard()` 只能在 `checkCanDraw` 操作，处理完毕或结算效果后会回到 `checkCanDraw`。
 - 回合开始/推进：
-  - `engine.beginNextPlayerTurn()`：当子阶段为 `nextPlayerTurnStart` 时切到下一玩家并置为 `turnStart`；处于 `turnStart` 会自动推进到 `awaitHoldChoice`。
+  - `engine.beginNextPlayerTurn()`：若当前子阶段为空或正处于 `turnStart`，调用后会自动推进到 `checkCanDraw`（期间触发 Buff 的 `onTurnStart`）。
 - 回合结束与整轮结束：
-  - UI 调用 `engine.finishPlayerTurn()` 进入 `turnEnd`；引擎在 `turnEnd` 统一判定是否进入 `finishRound`（所有玩家无法继续抽牌），否则进入 `nextPlayerTurnStart`。
+  - UI 在 `preTurnEnd` 提供“结束回合”按钮，调用 `engine.finishPlayerTurn()` 将子阶段切到 `turnEnd`；引擎在 `turnEnd` 判定是否进入 `finishRound`（所有玩家无法继续抽牌），否则切换下一名玩家并回到其 `turnStart`。
 - 旅行商人：
   - `engine.skipMerchant()` / `engine.acceptMerchantOffer(index)` 用于跳过或接受报价。
 
 ## 🖥️ UI 与调试（本次更新要点）
 
 - 子阶段驱动的按钮集合：
-  - `awaitHoldChoice` 显示：“释放滞留 / 丢弃滞留 / 抽卡”。
-  - `awaitAction` 显示：“结算 / 滞留 / 丢弃”。
+  - `checkCanDraw` 显示：“释放滞留 / 丢弃滞留 / 抽卡”。
+  - `waitingDrawChoice` 显示：“结算 / 滞留 / 丢弃”。
+  - `preTurnEnd` 仅显示“结束回合”。
   - 其余阶段不显示会误导的操作，避免无效点击。
 - 调试日志增强：
   - 每次子阶段变更都会记录一条 `子阶段: from -> to`，便于定位流程问题。
 - 重置对决体验：
-  - 点击“重置对决”后，会自动从 `turnStart` 推进到 `awaitHoldChoice`，无需手动多一步。
+  - 点击“重置对决”后，会自动从 `turnStart` 推进到 `checkCanDraw`，无需手动多一步。
 - AI 自动操作开关：
   - 顶栏新增“允许 AI 自动操作”开关。开启后，AI 在自己的回合按照与玩家一致的子阶段流程进行随机决策（释放滞留/抽卡/对 activeCard 结算/滞留/丢弃），用于便捷调试。
 
 ## 🔧 引擎 API 变化（面向前端的重要差异）
 
 - `ensurePhase(state, phase, subPhase?)`：第三个参数可用于校验子阶段，不匹配返回错误结果。
-- `advanceSubPhase(state)`：推进一个子阶段（例如将 `awaitHoldChoice` 推进到 `drawingCard`）。
-- `beginNextPlayerTurn(state)`：处于 `nextPlayerTurnStart` 时切换玩家；处于 `turnStart` 时推进到 `awaitHoldChoice`。
-- `finishPlayerTurn(state)`：推进到 `turnEnd` 并在此处做整轮结束判断；若未结束则进入 `nextPlayerTurnStart`（随后由 UI 调用 `beginNextPlayerTurn`）。
-- `releaseHoldCard(state)` / `discardHoldCard(state)`：在 `awaitHoldChoice` 下进入对应处理子阶段，完成后回到 `awaitHoldChoice`。
-- `playActiveCard` / `stashActiveCard` / `discardActiveCard`：在 `awaitAction` 下对当前抽到的卡进行操作。
+- `advanceSubPhase(state)`：推进一个子阶段（例如将 `checkCanDraw` 推进到 `prepareDrawingCard`）。
+- `beginNextPlayerTurn(state)`：用于唤醒当轮玩家的 `turnStart`，若当前子阶段为空或 `turnStart`，调用一次即可进入 `checkCanDraw`。
+- `finishPlayerTurn(state)`：将子阶段置为 `turnEnd` 并在此处做整轮结束判断；若未结束则直接切换下一名玩家并落在其 `turnStart`。
+- `releaseHoldCard(state)` / `discardHoldCard(state)`：在 `checkCanDraw` 下操作滞留卡，结算完毕后继续停留在 `checkCanDraw`。
+- `playActiveCard` / `stashActiveCard` / `discardActiveCard`：在 `waitingDrawChoice` 下对当前抽到的卡进行操作。
 
 ### 关卡级 API（新增）
 
@@ -460,13 +462,13 @@ flowchart TB
 
 ### 第五期
 
-1. AI操作的延迟实现, 目前AI的操作是瞬间完成的, 需要改为有延迟的(1~1.5s), 让玩家可以看到AI的每一步操作, 包括抽卡, 使用卡牌, 丢弃卡牌等. 此外, 有个BUG就是在awaitHoldChoice阶段, AI如果无卡可抽取, 应当直接选择结束回合, 而不是停在那里不动.
+1. AI操作的延迟实现, 目前AI的操作是瞬间完成的, 需要改为有延迟的(1~1.5s), 让玩家可以看到AI的每一步操作, 包括抽卡, 使用卡牌, 丢弃卡牌等. 此外, 有个BUG就是在`checkCanDraw`阶段, AI如果无卡可抽取, 应当直接选择结束回合, 而不是停在那里不动.
 2. 在finishLevel的LevelPhase引入分数结算动画, 开一个悬浮窗, ANTD的module, 横着排列每个玩家, 用柱状图的不断上升表现分数高低, 最后停在最终分数位置, 并且标注胜负关系(排名). 动画时间控制在2~3秒内完成. 结束后自动关闭悬浮窗, 进入下一个阶段.一个阶段开始也给一个module动画, 表示层级和当前层级的名字, 动画简单, 而且要快一点(1秒内完成).
 3. 小bug, 获取到Buff时, 玩家面板会被撑高, (因为和No Buff高度不一致), 需要统一高度, 建议和No Buff时的高度一致, 这样界面就不会跳动了.此外, 获取到Buff给一个由大缩小的淡入动画, 增强获得感. Buff消失过期的时候, 给一个淡出动画.然后层叠数量不要用小红点(看着难受), 可以标记在右上角, 用白色数字标记在Buff图标的右上角, 这样更直观一些, 给一个浅灰色的三角形衬底(右下角的角标做的很好, 参考这个设计)
 
 #### 第五期落地（已完成）
 
-- AI 行为改为逐步异步执行，单步延时 1~1.5s；并修复了 `awaitHoldChoice` 无法抽卡时的卡死，AI 会自动结束回合。
+- AI 行为改为逐步异步执行，单步延时 1~1.5s；并修复了 `checkCanDraw` 无法抽卡时的卡死，AI 会自动结束回合。
 - `finishLevel` 引入分数结算动画（AntD Modal）：横向柱状 2s 平滑上升，显示最终分数与名次；动画结束自动关闭并进入下一阶段。
 - 层开始增加阶段开场弹窗（1s）。
 - Buff 区统一高度；Buff 获取时“由大到正”的淡入动画、消失时淡出；堆叠数量移至右上角浅灰色三角角标，白色数字标注；去除所有阴影。
