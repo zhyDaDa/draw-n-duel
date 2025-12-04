@@ -42,7 +42,7 @@ const LevelResultModal: React.FC<LevelResultModalProps> = ({
     }
 
     targetScoresRef.current = players.map((p) =>
-      Math.max(0, p.score.modulus())
+      Math.max(0, p.score)
     );
     setAnimatedScores(players.map(() => 0));
 
@@ -104,7 +104,7 @@ const LevelResultModal: React.FC<LevelResultModalProps> = ({
   }, [open, players]);
 
   const ranks = React.useMemo(() => {
-  const pairs = players.map((p, i) => ({ i, score: p.score.modulus() }));
+  const pairs = players.map((p, i) => ({ i, score: p.score }));
   pairs.sort((a, b) => b.score - a.score);
     const map = new Map<number, number>();
     pairs.forEach((p, idx) => map.set(p.i, idx + 1));
@@ -113,7 +113,7 @@ const LevelResultModal: React.FC<LevelResultModalProps> = ({
 
   // compute maximum score among players to scale bars proportionally
   const maxScore = React.useMemo(() => {
-  const vals = players.map((p) => Math.max(0, p.score.modulus()));
+  const vals = players.map((p) => Math.max(0, p.score));
     const m = Math.max(1, ...vals);
     return m;
   }, [players]);

@@ -37,24 +37,30 @@ type GhostCard = {
   key: number;
 };
 
-const rarityLabel: Record<CardInstance["rarity"], string> = {
+const rarityLabel: Record<CardInstance["C_rarity"], string> = {
+  1: "阶 1",
+  2: "阶 2",
+  3: "阶 3",
+  4: "阶 4",
+  5: "阶 5",
   common: "普通",
   uncommon: "罕见",
   rare: "稀有",
   legendary: "传说",
+  mythic: "究极",
 };
 
 const renderTooltip = (card: CardInstance): ReactNode => (
   <div className="card-chip__tooltip tooltip-light__panel">
     <header>
-      <strong>{card.name}</strong>
-      <span>{rarityLabel[card.rarity]}</span>
+      <strong>{card.C_name}</strong>
+      <span>{rarityLabel[card.C_rarity]}</span>
     </header>
     <p>{describeCardEffect(card)}</p>
-    <p>{card.description}</p>
-    {card.keywords?.length ? (
+    <p>{card.C_description}</p>
+    {card.C_keywords?.length ? (
       <ul>
-        {card.keywords.map((keyword) => (
+        {card.C_keywords.map((keyword) => (
           <li key={keyword}>{keyword}</li>
         ))}
       </ul>
@@ -221,7 +227,7 @@ const CardLane: React.FC<CardLaneProps> = ({
         {overflowCards.map((card, idx) => (
           <div key={card.instanceId} className="card-slot__overflow-item">
             <strong>{`滞留位 ${idx + 3}`}</strong>
-            <div className="card-slot__overflow-name">{card.name}</div>
+            <div className="card-slot__overflow-name">{card.C_name}</div>
             <div className="card-slot__overflow-desc">
               {describeCardEffect(card)}
             </div>

@@ -17,54 +17,20 @@ interface CardDisplayProps {
 }
 
 export const describeCardEffect = (card: CardInstance): string => {
-  const { type, value, notes } = card.effect;
-  switch (type) {
-    case "add": {
-      // 支持区间 (minValue/maxValue) 与单值显示，符号根据数值正负决定
-      // const min = (card.effect as any).minValue
-      // const max = (card.effect as any).maxValue
-      // if (min !== undefined && max !== undefined) {
-      //   const fmt = (v: number) => (v >= 0 ? `+${v}` : `${v}`)
-      //   return `分数在 ${fmt(min)} 至 ${fmt(max)} 的区间内随机调整`
-      // }
-      const v = value ?? 0;
-      const signed = v >= 0 ? `+${v}` : `${v}`;
-      return `分数 ${signed}`;
-    }
-    case "divide":
-      return `分数 ÷${value ?? 1}`;
-    case "multiply":
-      return `分数 x${value ?? 1}`;
-    case "set":
-      return `分数变为 ${value ?? 0}`;
-    case "reset":
-      return "分数重置为 1";
-    case "extraDraw":
-      return `额外抽牌 ${value ?? 1} 张`;
-    case "transfer":
-      return `让对手失去 ${value ?? 0} 分`;
-    case "steal":
-      return `窃取 ${value ?? 0} 分`;
-    case "victoryShard":
-      return "收集 1 枚胜利碎片";
-    case "levelPass":
-      return `结算保底 ${value ?? 50} 分`;
-    case "shield":
-      return `获得护盾 ${value ?? 1} 层`;
-    case "duplicate":
-      return "复制滞留卡并结算";
-    case "merchantToken":
-      return "旅行商人优惠券";
-    case "wildcard":
-      return "若落后则与对手交换分数";
-    case "victoryShard":
-      return "收集 1 枚胜利碎片(3个同样的碎片直接获胜)";
-    default:
-      return notes ?? "特殊效果";
+  const effect = card.C_effect;
+  if (typeof effect.notes === "string") return effect.notes;
+  if (effect.notes && typeof effect.notes === "function") {
+    return "动态效果";
   }
+  return `效果类型：${effect.type}`;
 };
 
 const toneLabel: Record<CardTone, string> = {
+  1: "阶 1",
+  2: "阶 2",
+  3: "阶 3",
+  4: "阶 4",
+  5: "阶 5",
   common: "普通",
   uncommon: "罕见",
   rare: "稀有",
@@ -86,10 +52,10 @@ export const CardDisplay: React.FC<CardDisplayProps> = ({
   size = "md",
   className = "",
 }) => {
-  const resolvedTone: CardTone = tone ?? card?.rarity ?? "common";
-  const displayName = title ?? card?.name ?? "未命名卡牌";
+  const resolvedTone: CardTone = tone ?? card?.C_rarity ?? "common";
+  const displayName = title ?? card?.C_name ?? "未命名卡牌";
   const displayEffect = effectText ?? (card ? describeCardEffect(card) : "");
-  const displayDescription = descriptionText ?? card?.description ?? "";
+  const displayDescription = descriptionText ?? card?.C_description ?? "";
 
   const classes = [
     "card-display",

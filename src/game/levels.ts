@@ -1,9 +1,4 @@
-import {
-  createWeightedCard,
-  getCardsForLevel,
-  weightByRarity,
-} from "./cards";
-import { CARD_LIBRARY } from './CARD_LIBRARY';
+import { createCardInstance, getCardsForLevel } from "./cards";
 import {
   type CardInstance,
   type DeckState,
@@ -79,21 +74,6 @@ export const getLevelConfig = (level: number): LevelConfig => {
 
 const DEFAULT_DECK_SIZE = 24;
 
-const computeCopies = (
-  definitionId: string,
-  rarity: string,
-  baseWeight: number
-): number => {
-  const rarityWeight =
-    weightByRarity[rarity as keyof typeof weightByRarity] ?? 1;
-  const desired = baseWeight * rarityWeight;
-  const copies = Math.max(1, Math.round(desired));
-  if (definitionId === "victory-shard") {
-    return 1;
-  }
-  return copies;
-};
-
 export const buildDeckForLevel = (
   players: PlayerState[],
   level: number,
@@ -102,47 +82,30 @@ export const buildDeckForLevel = (
   const levelCards = getCardsForLevel(level);
   const baseInstances: CardInstance[] = [];
 
+  const deckSize =
+    (getLevelConfig(level).deckSize || DEFAULT_DECK_SIZE) * players.length;
+  const weightSum = levelCards.reduce(
+    (sum, card) => sum + card.C_baseWeight,
+    0
+  );
+  // 要生成的数量倍率, 不可以是小数, 保证低概率卡牌一定生成
+  const adjustment = Math.ceil(deckSize / weightSum);
+
   levelCards.forEach((definition) => {
-    const copies = computeCopies(
-      definition.id,
-      definition.rarity,
-      definition.baseWeight
-    );
-    const maxCopies = definition.maxCopies ?? copies;
-    const totalCopies = Math.min(copies, maxCopies);
-    for (let i = 0; i < totalCopies; i += 1) {
-      baseInstances.push(createWeightedCard(definition, rng));
+    for (let i = 0; i < definition.C_baseWeight * adjustment; i += 1) {
+      baseInstances.push(createCardInstance(definition));
     }
   });
 
-  // Ensure deck size by topping up with shuffled commons if needed.
-  let instances = baseInstances;
-  const deckSize = (getLevelConfig(level).deckSize || DEFAULT_DECK_SIZE) * players.length;
-  if (instances.length < deckSize) {
-    const commons = CARD_LIBRARY.filter(
-      (card) => card.rarity === "common" && level >= card.levelRange[0]
-    );
-    while (instances.length < deckSize) {
-      const pick = commons[Math.floor(rng() * commons.length)];
-      instances.push(createWeightedCard(pick, rng));
-    }
-  }
-
-  // Inject fortress shard pool: 每一层确保有 2 * 玩家数量 个碎片（颜色随机从带 shard 标签的卡牌中选取）
-  const shardPool = CARD_LIBRARY.filter(
-    (card) => card.tags?.includes("shard") && level >= card.levelRange[0]
-  );
-  const shardsToInject = Math.max(0, 2 * players.length);
-  for (let i = 0; i < shardsToInject && shardPool.length > 0; i += 1) {
-    const pick = shardPool[Math.floor(rng() * shardPool.length)];
-    instances.push(createWeightedCard(pick, rng));
-  }
-
-  const shuffled = shuffle(instances, rng);
+  // 确保卡牌数量和要求的数量一致, shuffle + 截断
+  const shuffled = shuffle(baseInstances, rng).slice(0, deckSize);
+  
   const rareCount = shuffled.filter(
-    (card) => card.rarity === "rare" || card.rarity === "legendary"
+    (card) => card.C_rarity === "rare" || card.C_rarity === "legendary"
   ).length;
-  const shardCount = shuffled.filter((card) => card.tags?.includes("shard")).length;
+  const shardCount = shuffled.filter((card) =>
+    card.C_keywords?.includes("shard")
+  ).length;
 
   return {
     originalDeckSize: deckSize,

@@ -31,7 +31,7 @@ export type Rarity =
   | "legendary"
   | "mythic";
 
-export interface State {
+export interface SituationState {
   self: CardDefinition;
   G_state: GameState;
   P_state: PlayerState;
@@ -39,7 +39,7 @@ export interface State {
   C_current?: CardInstance;
 }
 
-export type SituationFunction<R = void> = R | ((state: State) => R);
+export type SituationFunction<R = void> = R | ((state: SituationState) => R);
 
 // effect中用到的数值, 因为可能收到各种影响, 所以用一个字典来存储原本的数值和各种修改后的数值, 以及修改的来源
 export type EffectValue = {
@@ -110,19 +110,19 @@ export class CardDefinition {
     this.C_interactionTemplate = params.C_interactionTemplate;
   }
 
-  private resolve<T>(val: SituationFunction<T>, state?: State): T {
+  private resolve<T>(val: SituationFunction<T>, state?: SituationState): T {
     return typeof val === "function"
-      ? (val as (s: State) => T)(state as State)
+      ? (val as (s: SituationState) => T)(state as SituationState)
       : (val as T);
   }
 
   // 获取在特定情形下的名称文本（如果是函数则执行）
-  getName(state?: State): string {
+  getName(state?: SituationState): string {
     return this.resolve(this.C_name, state);
   }
 
   // 获取在特定情形下的描述文本（如果是函数则执行）
-  getDescription(state?: State): string {
+  getDescription(state?: SituationState): string {
     if (!this.C_description) return "";
     return this.resolve(this.C_description, state);
   }
@@ -219,7 +219,6 @@ export interface PlayerState {
   shields: number;
   merchantTokens: number;
   logPrefix: string;
-  pendingEffects: PendingEffect[];
   buffs: PlayerBuff[];
   isAI?: boolean;
   MAX_HOLD_SLOTS: number;
@@ -255,16 +254,16 @@ export interface PlayerBuff {
   maxStacks?: number;
   onTurnStart?: SituationFunction<void>;
   onTurnEnd?: SituationFunction<void>;
-  onBeforeDraw?: SituationFunction<void>;
   onAfterDraw?: SituationFunction<void>;
   onBeforePlay?: SituationFunction<void>;
   onAfterPlay?: SituationFunction<void>;
-  onBeforeDiscard?: SituationFunction<void>;
-  onAfterDiscard?: SituationFunction<void>;
   onBeforeStash?: SituationFunction<void>;
   onAfterStash?: SituationFunction<void>;
-  onBeforeRelease?: SituationFunction<void>;
-  onAfterRelease?: SituationFunction<void>;
+}
+
+export interface MerchantOffer {
+  cost: string;
+  buff: PlayerBuff;
 }
 
 export type InteractionType = "choice" | "payment" | "gamble" | "miniGame";

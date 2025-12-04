@@ -13,20 +13,26 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 
 const allCardDefinitions: CardDefinition[] = [...CARD_LIBRARY, ...MERCHANT_EXCLUSIVE]
 const cardLookupByName = new Map<string, CardDefinition>(
-  allCardDefinitions.map((definition) => [definition.name, definition]),
+  allCardDefinitions.map((definition) => [definition.C_name, definition]),
 )
 const cardNamePattern = allCardDefinitions
-  .map((definition) => definition.name)
+  .map((definition) => definition.C_name)
   .sort((a, b) => b.length - a.length)
   .map(escapeRegExp)
   .join('|')
 const cardNameRegex = cardNamePattern ? new RegExp(`(${cardNamePattern})`, 'g') : null
 
-const rarityLabels: Record<CardDefinition['rarity'], string> = {
+const rarityLabels: Record<CardDefinition['C_rarity'], string> = {
+  1: '阶 1',
+  2: '阶 2',
+  3: '阶 3',
+  4: '阶 4',
+  5: '阶 5',
   common: '普通',
   uncommon: '罕见',
   rare: '稀有',
   legendary: '传说',
+  mythic: '神话',
 }
 
 const renderCardBadge = (name: string, uniqueKey: string): ReactNode => {
@@ -36,16 +42,16 @@ const renderCardBadge = (name: string, uniqueKey: string): ReactNode => {
   const tooltipContent = (
     <div className="log-card__tooltip tooltip-light__panel">
       <header>
-        <strong>{definition.name}</strong>
-        <span>{rarityLabels[definition.rarity]}</span>
+        <strong>{definition.C_name}</strong>
+        <span>{rarityLabels[definition.C_rarity]}</span>
       </header>
-      <p>{definition.description}</p>
+      <p>{definition.C_description}</p>
     </div>
   )
 
   return (
     <Tooltip key={uniqueKey} title={tooltipContent} placement="top" overlayClassName="tooltip-light">
-      <span className="turn-log__card-ref">{definition.name}</span>
+      <span className="turn-log__card-ref">{definition.C_name}</span>
     </Tooltip>
   )
 }

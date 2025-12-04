@@ -37,21 +37,6 @@ export const MerchantModal: React.FC<MerchantModalProps> = ({
 
   const handleCancel = () => setSelectedIndex(null);
 
-  const severityLabel: Record<MerchantOffer["cost"]["severity"], string> = {
-    mild: "轻微",
-    moderate: "中度",
-    severe: "高危",
-  };
-
-  const severityTone: Record<
-    MerchantOffer["cost"]["severity"],
-    "cost-mild" | "cost-moderate" | "cost-severe"
-  > = {
-    mild: "cost-mild",
-    moderate: "cost-moderate",
-    severe: "cost-severe",
-  };
-
   return (
     <div className="merchant-overlay">
       <div className="merchant-modal">
@@ -62,8 +47,8 @@ export const MerchantModal: React.FC<MerchantModalProps> = ({
         <div className="merchant-modal__offers" role="radiogroup" aria-label="选择交易">
           {offers.map((offer, index) => (
             <label
-              key={offer.card.instanceId}
-              className={`merchant-offer merchant-offer--${offer.card.rarity} ${selectedIndex === index ? "is-selected" : ""}`}
+              key={offer.buff.id}
+              className={`merchant-offer ${selectedIndex === index ? "is-selected" : ""}`}
             >
               <input
                 className="merchant-offer__radio"
@@ -71,24 +56,27 @@ export const MerchantModal: React.FC<MerchantModalProps> = ({
                 name="merchant-offer"
                 checked={selectedIndex === index}
                 onChange={() => handleSelect(index)}
-                aria-label={`选择交易：${offer.card.name}`}
+                aria-label={`选择交易：${offer.buff.name}`}
               />
               <div className="merchant-offer__section merchant-offer__section--gain">
-                {/* <span className="merchant-offer__tag">增益效果</span> */}
-                <CardDisplay card={offer.card} variant="merchant" />
-                {/* <p className="merchant-offer__summary">
-                  {describeCardEffect(offer.card)}
-                </p> */}
+                <CardDisplay
+                  variant="merchant"
+                  title={typeof offer.buff.name === "string" ? offer.buff.name : "神秘增益"}
+                  descriptionText={
+                    typeof offer.buff.description === "string"
+                      ? offer.buff.description
+                      : "可在获得后查看详情"
+                  }
+                  effectText={offer.buff.valueDict ? JSON.stringify(offer.buff.valueDict) : "永久增益"}
+                />
               </div>
               <div className="merchant-offer__divider" aria-hidden="true" />
               <div className="merchant-offer__section merchant-offer__section--cost">
-                {/* <span className="merchant-offer__tag">付出代价</span> */}
                 <CardDisplay
                   variant="cost"
                   title="付出代价"
-                  effectText={`风险等级：${severityLabel[offer.cost.severity]}`}
-                  descriptionText={offer.cost.description}
-                  tone={severityTone[offer.cost.severity]}
+                  descriptionText={offer.cost}
+                  tone="cost-mild"
                 />
               </div>
             </label>

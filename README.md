@@ -151,7 +151,6 @@ flowchart TB
     L_C_D_0@{ animation: fast } 
     L_D_E_0@{ animation: fast } 
     L_E_H_0@{ animation: slow }
-
 ```
 
 ```mermaid
@@ -160,7 +159,6 @@ config:
   look: neo
   layout: elk
   theme: neo
-id: 45d8229d-ddf7-44bb-b2fd-4b04b47c383b
 ---
 flowchart TB
  subgraph s1["图例"]
@@ -169,70 +167,34 @@ flowchart TB
   end
  subgraph subGraph1["SubPhase Flow"]
     direction TB
-        A["turnStart"]
-        B["awaitHoldChoice"]
-        C["drawingCard"]
-        C1{"CanDraw?"}
-        D["awaitAction"]
-        F["playingCard"]
-        G["discardingCard"]
-        H["stashingCard"]
+        A(["turnStart"])
+        A1["checkCanDraw"]
+        B["prepareDrawingCard"]
+        C["waitingDrawChoice"]
+        D["onUseCard"]
+        E["onStashCard"]
+        Y["preturnEnd"]
         Z["turnEnd"]
-        Z1["nextPlayerTurnStart"]
-  X1["releaselingHoldCard"]
-  X2["discardingHoldCard"]
+        Z1@{ label: "(next player's turnStart)" }
         s1
   end
-    A -- N: 处理回合开始Buffs --> B
-    B -- H: drawCard --> C1
-    C1 -- Y: 可以抽卡 --> C
-    C1 -- N: 不能抽卡 --> Z
-    C -- N: 处理抽卡触发Buffs --> D
-    D -- H: handlePlay --> F
-    F -- N: 触发打出Buffs --> Z
-    D -- H: handleDiscard --> G
-    G -- N: 触发丢弃Buffs --> Z
-    D -- H: handleStash --> H
-    H -- N: 触发滞留Buffs --> Z
-    Z -- N: 处理回合结束Buffs --> Z1
-    B -- H: 玩家选择打出滞留 --> X1
-    X1 -- N: 处理打出滞留卡牌 --> B
-    B -- H: 玩家选择丢弃滞留 --> X2
-    X2 -- N: 处理丢弃滞留卡牌 --> B
+    A -- N: 处理Buffs的onTurnStart + 滞留卡更新状态 --> A1
+    A1 -- Y: 有剩余抽牌机会 --> B
+    A1 -- N: 没有抽牌机会 --> Y
+    B -- H: drawCard + N: onAfterDraw --> C
+    C -- H: 使用卡牌 + N: onBeforePlay --> D
+    C -- H: 滞留卡牌 + N: onBeforeStash --> E
+    D -- N: 卡牌效果处理 + onAfterPlay --> Y
+    E -- N: 卡牌滞留效果 + onAfterStash --> Y
+
+    Y -- N: 处理Buffs的onTurnEnd --> Z
+    Z -- N: level层面玩家回合切换 --> Z1
     L1 -- N: nextSubPhase自动处理 --> L2
     L1 -- H: handler人为操作 --> L2
-    s1 --> subGraph1
-    L1@{ shape: subproc}
-    L2@{ shape: rect}
-    A@{ shape: subproc}
-    B@{ shape: subproc}
-    C@{ shape: subproc}
-    D@{ shape: subproc}
-    F@{ shape: rect}
-    G@{ shape: subproc}
-    H@{ shape: rect}
-    Z@{ shape: subproc}
-    Z1@{ shape: subproc}
-    X1@{ shape: rect}
-    X2@{ shape: rect}
-     L1:::Sky
-     A:::Sky
-     B:::Sky
-     C:::Sky
-     D:::Sky
-     G:::Sky
-     Z:::Sky
-     Z1:::Sky
-     X1:::Sky
-    classDef Sky stroke-width:1px, stroke-dasharray:none, stroke:#374D7C, fill:#E2EBFF, color:#374D7C
-    style L2 fill:#FFFFFF
-    style C1 fill:#FFFFFF
-    style F fill:#FFFFFF
-    style H fill:#FFFFFF
-    style X1 fill:#FFFFFF
-    style X2 fill:#FFFFFF
-    style s1 fill:#757575,stroke:#FFFFFF,color:#FFFFFF
-    style subGraph1 fill:#BBDEFB
+    s1 ~~~ subGraph1
+
+    A1@{ shape: diam}
+    Z1@{ shape: stadium}
 ```
 
 ## 🧠 主要交互逻辑（函数与阶段对应）
