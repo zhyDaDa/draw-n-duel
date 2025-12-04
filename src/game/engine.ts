@@ -4,13 +4,14 @@ import {
   getLevelConfig,
   nextLevelOrMerchantPhase,
 } from "./levels";
+import { buildCardSituationState, buildSituationState } from "./situations";
 import {
   AI_LABEL,
   BASE_MATCH_CONFIG,
+  BlankDeckState,
   DEFAULT_MAX_HOLD_SLOTS,
   PLAYER_LABEL,
   type ActionResult,
-  type CardDefinition,
   type CardInstance,
   type DrawResult,
   type EngineOutcome,
@@ -21,7 +22,6 @@ import {
   type MerchantOffer,
   type PlayerBuff,
   type PlayerState,
-  type SituationState,
 } from "./types";
 
 const RNG_MOD = 0x100000000;
@@ -123,24 +123,6 @@ const consumeCard = (state: GameState): CardInstance | undefined => {
   return card;
 };
 
-const buildSituationState = ({
-  state,
-  player,
-  opponent,
-  card,
-}: {
-  state: GameState;
-  player: PlayerState;
-  opponent?: PlayerState;
-  card?: CardInstance;
-}): SituationState => ({
-  self: (card ?? ({} as CardDefinition)) as CardDefinition,
-  G_state: state,
-  P_state: player,
-  OP_state: opponent,
-  C_current: card,
-});
-
 type CardLifecycleHook = "onDraw" | "onPlay" | "onDiscard" | "onStash";
 
 const invokeCardHook = (
@@ -152,7 +134,7 @@ const invokeCardHook = (
 ): void => {
   const handler = card.C_effect?.[hook];
   if (typeof handler === "function") {
-    handler(buildSituationState({ state, player: actor, opponent, card }));
+    handler(buildCardSituationState({ state, player: actor, opponent, card }));
   }
 };
 
@@ -175,7 +157,10 @@ const invokeBuffHook = (
 ): void => {
   const handler = buff[hook];
   if (typeof handler === "function") {
-    handler(buildSituationState({ state, player: owner, opponent, card }));
+    const situation = card
+      ? buildCardSituationState({ state, player: owner, opponent, card })
+      : buildSituationState({ state, player: owner, opponent });
+    handler(situation);
   }
 };
 
@@ -252,7 +237,7 @@ const resetPlayerForLevel = (
   player: PlayerState,
   levelConfig: LevelConfig
 ): void => {
-  player.score = 0;
+  player.score = 1;
   player.drawsUsed = 0;
   player.extraDraws = 0;
   player.baseDraws = levelConfig.baseMaxDraws;
@@ -309,7 +294,9 @@ export const ensurePhase = (
   if (expectedSubPhase && state.subPhase !== expectedSubPhase) {
     return {
       type: "invalidPhase",
-      message: `当前子阶段为 ${state.subPhase ?? "(none)"}，预期 ${expectedSubPhase}。`,
+      message: `当前子阶段为 ${
+        state.subPhase ?? "(none)"
+      }，预期 ${expectedSubPhase}。`,
     };
   }
   return undefined;
@@ -337,7 +324,7 @@ export const createInitialState = (
 
   const players: PlayerState[] = playerLabels.map((label) => ({
     label,
-    score: 0,
+    score: 1,
     drawsUsed: 0,
     baseDraws: levelConfig.baseMaxDraws,
     extraDraws: 0,
@@ -354,14 +341,12 @@ export const createInitialState = (
     MAX_HOLD_SLOTS: DEFAULT_MAX_HOLD_SLOTS,
   }));
 
-  const deck = buildDeckForLevel(players, level, () => rng.next());
-
   const initial: GameState = {
     phase: "levelStart",
     subPhase: "turnStart",
     level,
     config: BASE_MATCH_CONFIG,
-    deck,
+    deck: BlankDeckState,
     players,
     currentPlayerIndex: 0,
     activeCard: undefined,
@@ -370,6 +355,13 @@ export const createInitialState = (
     rngSeed: rng.getSeed(),
     pendingInteraction: null,
   };
+
+  initial.deck = buildDeckForLevel(
+    {
+      G_state: initial,
+    },
+    () => rng.next()
+  );
 
   setCurrentPlayerByIndex(initial, 0);
   return initial;
@@ -451,9 +443,7 @@ export function setSubPhase(
   state.subPhase = subPhase;
 }
 
-export const drawCard = (
-  sourceState: GameState
-): EngineOutcome<DrawResult> => {
+export const drawCard = (sourceState: GameState): EngineOutcome<DrawResult> => {
   const validation = ensurePhase(
     sourceState,
     "playerTurn",
@@ -636,7 +626,10 @@ export const stashActiveCard = (
 
   addCardToHold(state.players[state.currentPlayerIndex], activeCard);
   invokeCardHook(activeCard, "onStash", state, player, opponent);
-  appendLog(state, `${player.logPrefix} 将 ${activeCard.C_name} 放入滞留位顶部。`);
+  appendLog(
+    state,
+    `${player.logPrefix} 将 ${activeCard.C_name} 放入滞留位顶部。`
+  );
   state.activeCard = undefined;
 
   player.buffs.forEach((buff) =>
@@ -695,11 +688,7 @@ export const discardActiveCard = (
 export const releaseHoldCard = (
   sourceState: GameState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(
-    sourceState,
-    "playerTurn",
-    "checkCanDraw"
-  );
+  const validation = ensurePhase(sourceState, "playerTurn", "checkCanDraw");
   if (validation) return validation;
   const player = sourceState.players[sourceState.currentPlayerIndex];
   if (player.holdSlots.length === 0) {
@@ -756,11 +745,7 @@ export const releaseHoldCard = (
 export const discardHoldCard = (
   sourceState: GameState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(
-    sourceState,
-    "playerTurn",
-    "checkCanDraw"
-  );
+  const validation = ensurePhase(sourceState, "playerTurn", "checkCanDraw");
   if (validation) return validation;
   const player = sourceState.players[sourceState.currentPlayerIndex];
   if (player.holdSlots.length === 0) {
@@ -886,7 +871,9 @@ const applyLevelEnd = (state: GameState): void => {
   }
 
   const shardWinner = checkShardVictory(state);
-  const bestOfFiveWinner = state.players.find((player) => player.wins >= 3)?.label;
+  const bestOfFiveWinner = state.players.find(
+    (player) => player.wins >= 3
+  )?.label;
   state.winner = shardWinner ?? bestOfFiveWinner;
 };
 
@@ -895,7 +882,7 @@ const prepareNextLevel = (state: GameState): void => {
   const levelConfig = getLevelConfig(state.level);
 
   const rng = createSeededRng(state.rngSeed);
-  const deck = buildDeckForLevel(state.players, state.level, () => rng.next());
+  const deck = buildDeckForLevel({ G_state: state }, () => rng.next());
   state.rngSeed = rng.getSeed();
   state.deck = deck;
 

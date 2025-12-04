@@ -1,14 +1,10 @@
 import type { ReactNode } from "react";
-import type { CardInstance, Rarity } from "../game/types";
+import type { CardSituationState, Rarity } from "../game/types";
 
 type CardTone = Rarity | "cost-mild" | "cost-moderate" | "cost-severe";
 
 interface CardDisplayProps {
-  card?: CardInstance;
-  title?: string;
-  effectText?: string;
-  descriptionText?: string;
-  tone?: CardTone;
+  state: CardSituationState;
   highlight?: boolean;
   footer?: ReactNode;
   variant?: "default" | "merchant" | "cost";
@@ -16,46 +12,44 @@ interface CardDisplayProps {
   className?: string;
 }
 
-export const describeCardEffect = (card: CardInstance): string => {
-  const effect = card.C_effect;
+export const describeCardEffect = (
+  state: CardSituationState
+): string => {
+  const effect = state.C_current.C_effect;
   if (typeof effect.notes === "string") return effect.notes;
-  if (effect.notes && typeof effect.notes === "function") {
-    return "动态效果";
-  }
-  return `效果类型：${effect.type}`;
+  else if (typeof effect.notes === "function") {
+    return effect.notes(state);
+  } else return `效果类型：${effect.type}`;
 };
 
-const toneLabel: Record<CardTone, string> = {
-  1: "阶 1",
-  2: "阶 2",
-  3: "阶 3",
-  4: "阶 4",
-  5: "阶 5",
+export const toneLabel: Record<CardTone, string> = {
+  1: "普通",
+  2: "罕见",
+  3: "稀有",
+  4: "传说",
+  5: "究极",
   common: "普通",
   uncommon: "罕见",
   rare: "稀有",
   legendary: "传说",
+  mythic: "究极",
   "cost-mild": "轻微代价",
   "cost-moderate": "中度代价",
   "cost-severe": "高危代价",
 };
 
 export const CardDisplay: React.FC<CardDisplayProps> = ({
-  card,
-  title,
-  effectText,
-  descriptionText,
-  tone,
+  state,
   highlight = false,
   footer,
   variant = "default",
   size = "md",
   className = "",
 }) => {
-  const resolvedTone: CardTone = tone ?? card?.C_rarity ?? "common";
-  const displayName = title ?? card?.C_name ?? "未命名卡牌";
-  const displayEffect = effectText ?? (card ? describeCardEffect(card) : "");
-  const displayDescription = descriptionText ?? card?.C_description ?? "";
+  const resolvedTone: CardTone = state.C_current.C_rarity ?? "common";
+  const displayName = state.C_current.C_name ?? "未命名卡牌";
+  const displayEffect = state.C_current ? describeCardEffect(state) : "";
+  const displayDescription = state.C_current.C_description ?? "";
 
   const classes = [
     "card-display",

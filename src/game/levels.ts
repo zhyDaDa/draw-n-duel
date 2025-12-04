@@ -4,7 +4,7 @@ import {
   type DeckState,
   type LevelConfig,
   type MatchConfig,
-  type PlayerState,
+  type SituationState,
 } from "./types";
 
 const shuffle = <T>(arr: T[], rng: () => number): T[] => {
@@ -75,10 +75,10 @@ export const getLevelConfig = (level: number): LevelConfig => {
 const DEFAULT_DECK_SIZE = 24;
 
 export const buildDeckForLevel = (
-  players: PlayerState[],
-  level: number,
+  state: Omit<SituationState, "P_state">,
   rng: () => number = Math.random
 ): DeckState => {
+  const { level, players } = state.G_state;
   const levelCards = getCardsForLevel(level);
   const baseInstances: CardInstance[] = [];
 
@@ -93,13 +93,15 @@ export const buildDeckForLevel = (
 
   levelCards.forEach((definition) => {
     for (let i = 0; i < definition.C_baseWeight * adjustment; i += 1) {
-      baseInstances.push(createCardInstance(definition));
+      const card = createCardInstance(definition);
+      card.C_effect.onCreate?.({ ...state, C_current: card });
+      baseInstances.push(card);
     }
   });
 
   // 确保卡牌数量和要求的数量一致, shuffle + 截断
   const shuffled = shuffle(baseInstances, rng).slice(0, deckSize);
-  
+
   const rareCount = shuffled.filter(
     (card) => card.C_rarity === "rare" || card.C_rarity === "legendary"
   ).length;

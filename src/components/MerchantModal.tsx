@@ -1,4 +1,3 @@
-import CardDisplay from "./CardDisplay";
 import { useEffect, useState } from "react";
 import type { MerchantOffer } from "../game/types";
 
@@ -59,25 +58,30 @@ export const MerchantModal: React.FC<MerchantModalProps> = ({
                 aria-label={`选择交易：${offer.buff.name}`}
               />
               <div className="merchant-offer__section merchant-offer__section--gain">
-                <CardDisplay
-                  variant="merchant"
-                  title={typeof offer.buff.name === "string" ? offer.buff.name : "神秘增益"}
-                  descriptionText={
-                    typeof offer.buff.description === "string"
+                <article className="merchant-offer__card">
+                  <header>
+                    <strong>
+                      {typeof offer.buff.name === "string"
+                        ? offer.buff.name
+                        : "神秘增益"}
+                    </strong>
+                    <span>增益</span>
+                  </header>
+                  <p>
+                    {typeof offer.buff.description === "string"
                       ? offer.buff.description
-                      : "可在获得后查看详情"
-                  }
-                  effectText={offer.buff.valueDict ? JSON.stringify(offer.buff.valueDict) : "永久增益"}
-                />
+                      : "可在获得后查看详情"}
+                  </p>
+                </article>
               </div>
               <div className="merchant-offer__divider" aria-hidden="true" />
               <div className="merchant-offer__section merchant-offer__section--cost">
-                <CardDisplay
-                  variant="cost"
-                  title="付出代价"
-                  descriptionText={offer.cost}
-                  tone="cost-mild"
-                />
+                <article className="merchant-offer__card merchant-offer__card--cost">
+                  <header>
+                    <strong>付出代价</strong>
+                  </header>
+                  <p>{offer.cost}</p>
+                </article>
               </div>
             </label>
           ))}

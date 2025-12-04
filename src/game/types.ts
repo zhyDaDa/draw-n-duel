@@ -32,14 +32,21 @@ export type Rarity =
   | "mythic";
 
 export interface SituationState {
-  self: CardDefinition;
   G_state: GameState;
   P_state: PlayerState;
   OP_state?: PlayerState;
-  C_current?: CardInstance;
+}
+export interface CardSituationState extends SituationState {
+  C_current: CardInstance;
+}
+export interface BuffSituationState extends SituationState {
+  B_current: CardInstance;
 }
 
 export type SituationFunction<R = void> = R | ((state: SituationState) => R);
+export type CardSituationFunction<R = void> =
+  | R
+  | ((state: CardSituationState) => R);
 
 // effect中用到的数值, 因为可能收到各种影响, 所以用一个字典来存储原本的数值和各种修改后的数值, 以及修改的来源
 export type EffectValue = {
@@ -53,13 +60,13 @@ export interface CardEffect {
   type: EffectType;
   target?: TargetType;
   valueDict: Record<string, EffectValue>;
-  notes?: string | SituationFunction<string>;
-  onCreate?: SituationFunction<void>;
-  onDisplay?: SituationFunction<void>;
-  onDraw?: SituationFunction<void>;
-  onPlay?: SituationFunction<void>;
-  onDiscard?: SituationFunction<void>;
-  onStash?: SituationFunction<void>;
+  notes?: string | CardSituationFunction<string>;
+  onCreate?: (state: Omit<CardSituationState, "P_state">) => void;
+  onDisplay?: CardSituationFunction<void>;
+  onDraw?: CardSituationFunction<void>;
+  onPlay?: CardSituationFunction<void>;
+  onDiscard?: CardSituationFunction<void>;
+  onStash?: CardSituationFunction<void>;
   interactionAPI?: any;
 }
 
@@ -204,6 +211,15 @@ export interface DeckState {
     remainingRare: number;
   };
 }
+export const BlankDeckState = {
+  originalDeckSize: 0,
+  drawPile: [],
+  discardPile: [],
+  publicInfo: {
+    remainingRare: 0,
+    remainingShards: 0,
+  },
+} as DeckState;
 
 export interface PlayerState {
   label: string;

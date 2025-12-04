@@ -30,8 +30,10 @@ import {
   stashActiveCard,
   discardHoldCard,
 } from "../game/engine";
+import { buildCardSituationState } from "../game/situations";
 import {
   type ActionResult,
+  type DrawResult,
   type EngineError,
   type EngineOutcome,
   type GameState,
@@ -238,10 +240,7 @@ const GamePlayPage: React.FC = () => {
           s.subPhase === "waitingDrawChoice" &&
           s.activeCard
         ) {
-          const card = s.activeCard;
           const aiNow = s.players[s.currentPlayerIndex];
-          const oppNow =
-            s.players[(s.currentPlayerIndex + 1) % s.players.length];
           const decide = () => {
             // AI决策
             return "play";
@@ -299,15 +298,29 @@ const GamePlayPage: React.FC = () => {
     }
   }, [autoAI, gameState]);
 
+  const resolveOutcomeMessages = (
+    payload: ActionResult | ResolveResult | DrawResult
+  ): string[] | undefined => {
+    if ("messages" in payload && payload.messages) {
+      return payload.messages;
+    }
+    if ("messsages" in payload) {
+      const maybe = (payload as DrawResult).messsages;
+      return Array.isArray(maybe) ? maybe : undefined;
+    }
+    return undefined;
+  };
+
   const handleOutcome = (
-    outcome: EngineOutcome<ActionResult | ResolveResult>
+    outcome: EngineOutcome<ActionResult | ResolveResult | DrawResult>
   ) => {
     if (isEngineError(outcome)) {
       setStatusMessage(outcome.message);
       return;
     }
     setGameState(outcome.state);
-    setStatusMessage(outcome.messages?.join(" ") ?? null);
+    const mergedMessages = resolveOutcomeMessages(outcome);
+    setStatusMessage(mergedMessages?.join(" ") ?? null);
     setGameState((s) => {
       if (s.phase === "playerTurn" && s.subPhase === "turnStart") {
         return beginNextPlayerTurn(s);
@@ -533,6 +546,28 @@ const GamePlayPage: React.FC = () => {
   const holdSlots = currentPlayer?.holdSlots ?? [];
   const maxHoldSlots = currentPlayer?.MAX_HOLD_SLOTS ?? 2;
   const activeCard = gameState.activeCard;
+  const opponentForCurrent = gameState.players.find(
+    (_, idx) => idx !== gameState.currentPlayerIndex
+  );
+  const activeCardState =
+    currentPlayer && activeCard
+      ? buildCardSituationState({
+          state: gameState,
+          player: currentPlayer,
+          opponent: opponentForCurrent,
+          card: activeCard,
+        })
+      : undefined;
+  const holdStates = currentPlayer
+    ? holdSlots.map((card) =>
+        buildCardSituationState({
+          state: gameState,
+          player: currentPlayer,
+          opponent: opponentForCurrent,
+          card,
+        })
+      )
+    : [];
   const canPlay = Boolean(activeCard);
   const canStash =
     Boolean(activeCard) && holdSlots.length < currentPlayer.MAX_HOLD_SLOTS;
@@ -750,9 +785,9 @@ const GamePlayPage: React.FC = () => {
             {gameState.players?.map((player, idx) => (
               <PlayerHUD
                 key={player.label + idx}
-                player={player}
+                gameState={gameState}
+                playerIndex={idx}
                 isCurrent={gameState.currentPlayerIndex === idx && isPlayerTurn}
-                isHuman={!player.isAI}
               />
             ))}
           </Space>
@@ -800,8 +835,8 @@ const GamePlayPage: React.FC = () => {
             <CardLane
               deckStats={deckStats}
               deckRemaining={gameState.deck.drawPile.length}
-              activeCard={activeCard}
-              holdSlots={holdSlots}
+              activeCardState={activeCardState}
+              holdStates={holdStates}
               maxHoldSlots={maxHoldSlots}
               animationEvent={animationEvent}
               pendingInteraction={pendingInteraction}

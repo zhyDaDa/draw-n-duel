@@ -1,10 +1,5 @@
 import { randomInt } from "../utils";
-import {
-  createCard,
-  type CardDefinition,
-  type CardEffect,
-  type TargetType,
-} from "./types";
+import { createCard, type CardEffect, type TargetType } from "./types";
 
 const DEFAULT_LEVEL_RANGE: [number, number] = [1, 5];
 
@@ -25,15 +20,16 @@ export const CARD_LIBRARY = [
         },
       },
       notes: (state) => {
-        return `+ ${state.self.C_effect.valueDict.score} 分`;
+        const score = state.C_current.C_effect.valueDict.score;
+        return `+ ${score.modified ?? score.base} 分`;
       },
       onCreate: (state) => {
         const delta = (state.G_state.level + 1) ** 2;
         const score = delta + 1 + randomInt(-delta, delta);
-        state.self.C_effect.valueDict.score.base = score;
+        state.C_current.C_effect.valueDict.score.base = score;
       },
       onPlay(state) {
-        const score = state.self.C_effect.valueDict.score;
+        const score = state.C_current.C_effect.valueDict.score;
         state.P_state.score += score.modified ?? score.base;
       },
     } as CardEffect,
@@ -54,15 +50,18 @@ export const CARD_LIBRARY = [
         },
       },
       notes: (state) => {
-        return `+ ${state.self.C_effect.valueDict.score} 分`;
+        const score = state.C_current.C_effect.valueDict.score;
+        return `x ${score.base}${
+          score.modified !== undefined ? ` (modified: ${score.modified})` : ""
+        } 分`;
       },
       onCreate: (state) => {
         const delta = (state.G_state.level + 1) * 2;
         const score = delta * 0.5 + 1 + randomInt(-delta, delta) * 0.5;
-        state.self.C_effect.valueDict.score.base = score;
+        state.C_current.C_effect.valueDict.score.base = score;
       },
       onPlay(state) {
-        const score = state.self.C_effect.valueDict.score;
+        const score = state.C_current.C_effect.valueDict.score;
         state.P_state.score *= score.modified ?? score.base;
       },
     } as CardEffect,

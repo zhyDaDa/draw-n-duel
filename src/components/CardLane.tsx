@@ -1,9 +1,16 @@
 import { Tooltip } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { CardInstance, InteractionRequest } from "../game/types";
-import { DEFAULT_MAX_HOLD_SLOTS } from "../game/types";
-import CardDisplay, { describeCardEffect } from "./CardDisplay";
+import {
+  DEFAULT_MAX_HOLD_SLOTS,
+  type CardInstance,
+  type CardSituationState,
+  type InteractionRequest,
+} from "../game/types";
+import CardDisplay, {
+  describeCardEffect,
+  toneLabel as rarityLabel,
+} from "./CardDisplay";
 
 export type CardLaneAnimationType =
   | "draw"
@@ -21,8 +28,8 @@ export interface CardLaneAnimationEvent {
 interface CardLaneProps {
   deckStats: CardDeckStats;
   deckRemaining: number;
-  activeCard?: CardInstance;
-  holdSlots: CardInstance[];
+  activeCardState?: CardSituationState;
+  holdStates: CardSituationState[];
   maxHoldSlots?: number;
   animationEvent: CardLaneAnimationEvent | null;
   pendingInteraction?: InteractionRequest | null;
@@ -37,36 +44,26 @@ type GhostCard = {
   key: number;
 };
 
-const rarityLabel: Record<CardInstance["C_rarity"], string> = {
-  1: "阶 1",
-  2: "阶 2",
-  3: "阶 3",
-  4: "阶 4",
-  5: "阶 5",
-  common: "普通",
-  uncommon: "罕见",
-  rare: "稀有",
-  legendary: "传说",
-  mythic: "究极",
+const renderTooltip = (state: CardSituationState): ReactNode => {
+  const card = state.C_current;
+  return (
+    <div className="card-chip__tooltip tooltip-light__panel">
+      <header>
+        <strong>{card.C_name}</strong>
+        <span>{rarityLabel[card.C_rarity]}</span>
+      </header>
+      <p>{describeCardEffect(state)}</p>
+      <p>{card.C_description}</p>
+      {card.C_keywords?.length ? (
+        <ul>
+          {card.C_keywords.map((keyword) => (
+            <li key={keyword}>{keyword}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 };
-
-const renderTooltip = (card: CardInstance): ReactNode => (
-  <div className="card-chip__tooltip tooltip-light__panel">
-    <header>
-      <strong>{card.C_name}</strong>
-      <span>{rarityLabel[card.C_rarity]}</span>
-    </header>
-    <p>{describeCardEffect(card)}</p>
-    <p>{card.C_description}</p>
-    {card.C_keywords?.length ? (
-      <ul>
-        {card.C_keywords.map((keyword) => (
-          <li key={keyword}>{keyword}</li>
-        ))}
-      </ul>
-    ) : null}
-  </div>
-);
 
 export interface CardDeckStats {
   total: number;
@@ -87,7 +84,7 @@ const renderDeckTooltip = (stats: CardDeckStats): ReactNode => (
 );
 
 const renderCard = (
-  card: CardInstance,
+  state: CardSituationState,
   options: {
     extraClass?: string;
   } = {}
@@ -95,22 +92,33 @@ const renderCard = (
   const { extraClass = "" } = options;
   return (
     <Tooltip
-      title={renderTooltip(card)}
+      title={renderTooltip(state)}
       placement="top"
       classNames={{ root: "tooltip-light" }}
     >
       <div className={`card-slot__card ${extraClass}`}>
-        <CardDisplay card={card} size="sm" />
+        <CardDisplay state={state} size="sm" />
       </div>
     </Tooltip>
   );
 };
 
+const cloneSituationForCard = (
+  card: CardInstance,
+  reference?: CardSituationState
+): CardSituationState | null => {
+  if (!reference) return null;
+  return {
+    ...reference,
+    C_current: card,
+  };
+};
+
 const CardLane: React.FC<CardLaneProps> = ({
   deckStats,
   deckRemaining,
-  activeCard,
-  holdSlots,
+  activeCardState,
+  holdStates,
   maxHoldSlots = DEFAULT_MAX_HOLD_SLOTS,
   animationEvent,
   pendingInteraction,
@@ -121,6 +129,17 @@ const CardLane: React.FC<CardLaneProps> = ({
   const [stackShiftKey, setStackShiftKey] = useState<number | null>(null);
   const currentEventKey = animationEvent?.timestamp ?? 0;
   const slotGroupRef = useRef<HTMLDivElement | null>(null);
+  const resolveGhostReference = (origin: GhostCard["origin"]) =>
+    origin === "active"
+      ? activeCardState ?? holdStates[0]
+      : holdStates[0] ?? activeCardState;
+  const renderGhostContent = (ghost: GhostCard) => {
+    const reference = resolveGhostReference(ghost.origin);
+    const ghostState = cloneSituationForCard(ghost.card, reference);
+    return ghostState ? renderCard(ghostState) : null;
+  };
+
+  const activeCard = activeCardState?.C_current;
 
   const activeCardClass = useMemo(() => {
     if (!animationEvent || !activeCard) return "";
@@ -138,19 +157,19 @@ const CardLane: React.FC<CardLaneProps> = ({
   const slotCards = useMemo(
     () =>
       Array.from({ length: maxHoldSlots }).map(
-        (_, index) => holdSlots[index] ?? null
+        (_, index) => holdStates[index] ?? null
       ),
-    [holdSlots, maxHoldSlots]
+    [holdStates, maxHoldSlots]
   );
 
   const holdClasses = useMemo(
     () =>
-      slotCards.map((card, index) => {
-        if (!card) return "";
+      slotCards.map((state, index) => {
+        if (!state) return "";
         if (!animationEvent) return "";
         if (
           animationEvent.type === "stash" &&
-          animationEvent.card.instanceId === card.instanceId &&
+          animationEvent.card.instanceId === state.C_current.instanceId &&
           index === 0
         ) {
           return "card-slot__card--stash";
@@ -199,8 +218,8 @@ const CardLane: React.FC<CardLaneProps> = ({
     return () => clearTimeout(timer);
   }, [stackShiftKey]);
 
-  const overflowCards = holdSlots.slice(2);
-  const overflowCount = overflowCards.length;
+  const overflowStates = holdStates.slice(2);
+  const overflowCount = overflowStates.length;
 
   // 是否启用横向滚动：只有当滞留位超过 2 才开启
   const scrollable = maxHoldSlots > 2;
@@ -224,14 +243,19 @@ const CardLane: React.FC<CardLaneProps> = ({
     if (overflowCount === 0) return null;
     return (
       <div className="card-slot__overflow-tooltip">
-        {overflowCards.map((card, idx) => (
-          <div key={card.instanceId} className="card-slot__overflow-item">
+        {overflowStates.map((state, idx) => (
+          <div
+            key={state.C_current.instanceId}
+            className="card-slot__overflow-item"
+          >
             <strong>{`滞留位 ${idx + 3}`}</strong>
-            <div className="card-slot__overflow-name">{card.C_name}</div>
-            <div className="card-slot__overflow-desc">
-              {describeCardEffect(card)}
+            <div className="card-slot__overflow-name">
+              {state.C_current.C_name}
             </div>
-            {idx < overflowCards.length - 1 ? <hr /> : null}
+            <div className="card-slot__overflow-desc">
+              {describeCardEffect(state)}
+            </div>
+            {idx < overflowStates.length - 1 ? <hr /> : null}
           </div>
         ))}
       </div>
@@ -254,8 +278,8 @@ const CardLane: React.FC<CardLaneProps> = ({
       </div>
 
       <div className="card-slot card-slot--active">
-        {activeCard ? (
-          renderCard(activeCard, {
+        {activeCardState && activeCard ? (
+          renderCard(activeCardState, {
             extraClass: [
               activeCardClass,
               pendingInteraction ? "card-slot__card--pending" : "",
@@ -276,7 +300,7 @@ const CardLane: React.FC<CardLaneProps> = ({
             key={ghostCard.key}
             className={`card-slot__ghost card-slot__ghost--${ghostCard.animation}`}
           >
-            {renderCard(ghostCard.card)}
+            {renderGhostContent(ghostCard)}
           </div>
         )}
         <span className="card-slot__label">当前卡牌</span>
@@ -291,13 +315,13 @@ const CardLane: React.FC<CardLaneProps> = ({
           stackShiftKey ? "card-slot-group--animated" : ""
         } ${scrollable ? "card-slot-group--scrollable" : ""}`}
       >
-        {slotCards.map((card, index) => (
+        {slotCards.map((state, index) => (
           <div
-            key={card ? card.instanceId : `slot-${index}`}
+            key={state ? state.C_current.instanceId : `slot-${index}`}
             className="card-slot card-slot--hold"
           >
-            {card ? (
-              renderCard(card, { extraClass: holdClasses[index] })
+            {state ? (
+              renderCard(state, { extraClass: holdClasses[index] })
             ) : (
               <div className="card-slot__placeholder card-slot__placeholder--hold">
                 滞留位空
@@ -324,7 +348,7 @@ const CardLane: React.FC<CardLaneProps> = ({
             key={ghostCard.key}
             className={`card-slot__ghost card-slot__ghost--${ghostCard.animation}`}
           >
-            {renderCard(ghostCard.card)}
+            {renderGhostContent(ghostCard)}
           </div>
         )}
       </div>

@@ -1,25 +1,30 @@
 import CardDisplay from "./CardDisplay";
 import AnimatedBuffList from "./AnimatedBuffList";
+import { buildCardSituationState } from "../game/situations";
 import {
   DEFAULT_MAX_HOLD_SLOTS,
-  type PlayerState,
+  type GameState,
   type PlayerBuff,
 } from "../game/types";
 import "../components/BuffDisplay.css";
 
 interface PlayerHUDProps {
-  player: PlayerState;
+  gameState: GameState;
+  playerIndex: number;
   isCurrent: boolean;
-  isHuman: boolean;
   onUnpackBackpack?: (index: number) => void;
 }
 
 export const PlayerHUD: React.FC<PlayerHUDProps> = ({
-  player,
+  gameState,
+  playerIndex,
   isCurrent,
-  isHuman,
   onUnpackBackpack,
 }) => {
+  const player = gameState.players[playerIndex];
+  if (!player) return null;
+  const opponent = gameState.players.find((_, idx) => idx !== playerIndex);
+  const isHuman = !player.isAI;
   // 转换现有数据到 Buff 系统
   let syntheticBuffId = 1;
   const makeBuffId = () => syntheticBuffId++;
@@ -133,27 +138,37 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
         <div className="player-hud__backpack">
           <h3>背包</h3>
           <ul>
-            {player.backpack.map((card, index) => (
-              <li key={card.instanceId}>
-                <CardDisplay
-                  card={card}
-                  footer={
-                    isHuman ? (
-                      <button
-                        type="button"
-                        className="btn btn--small"
-                        onClick={() => onUnpackBackpack?.(index)}
-                        disabled={player.holdSlots.length >= 2}
-                      >
-                        放入滞留位
-                      </button>
-                    ) : (
-                      <span>AI 收藏中</span>
-                    )
-                  }
-                />
-              </li>
-            ))}
+            {player.backpack.map((card, index) => {
+              const state = buildCardSituationState({
+                state: gameState,
+                player,
+                opponent,
+                card,
+              });
+              return (
+                <li key={card.instanceId}>
+                  <CardDisplay
+                    state={state}
+                    footer={
+                      isHuman ? (
+                        <button
+                          type="button"
+                          className="btn btn--small"
+                          onClick={() => onUnpackBackpack?.(index)}
+                          disabled={
+                            player.holdSlots.length >= player.MAX_HOLD_SLOTS
+                          }
+                        >
+                          放入滞留位
+                        </button>
+                      ) : (
+                        <span>AI 收藏中</span>
+                      )
+                    }
+                  />
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
