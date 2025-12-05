@@ -1,8 +1,5 @@
-import CardDisplay from "./CardDisplay";
 import AnimatedBuffList from "./AnimatedBuffList";
-import { buildCardSituationState } from "../game/situations";
 import {
-  DEFAULT_MAX_HOLD_SLOTS,
   type GameState,
   type PlayerBuff,
 } from "../game/types";
@@ -19,28 +16,13 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
   gameState,
   playerIndex,
   isCurrent,
-  onUnpackBackpack,
 }) => {
   const player = gameState.players[playerIndex];
   if (!player) return null;
-  const opponent = gameState.players.find((_, idx) => idx !== playerIndex);
-  const isHuman = !player.isAI;
   // 转换现有数据到 Buff 系统
   let syntheticBuffId = 1;
   const makeBuffId = () => syntheticBuffId++;
   const buffs: PlayerBuff[] = [];
-  const extraHoldSlots = Math.max(0, player.MAX_HOLD_SLOTS - DEFAULT_MAX_HOLD_SLOTS);
-
-  if (extraHoldSlots > 0) {
-    buffs.push({
-      id: makeBuffId(),
-      name: "滞留扩容",
-      description: `滞留位上限提升 ${extraHoldSlots}，当前共有 ${player.MAX_HOLD_SLOTS} 个滞留槽。`,
-      icon: "/src/assets/svg/双右_double-right.svg",
-      isPermanent: true,
-      count: extraHoldSlots,
-    });
-  }
 
   // 胜利碎片 Buff —— 按颜色展示，每种颜色单独计数
   if (player.victoryShards && Object.keys(player.victoryShards).length > 0) {
@@ -133,45 +115,6 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       <div className="player-hud__buffs">
         <AnimatedBuffList buffs={allBuffs} minRows={1} />
       </div>
-
-      {player.backpack.length > 0 && (
-        <div className="player-hud__backpack">
-          <h3>背包</h3>
-          <ul>
-            {player.backpack.map((card, index) => {
-              const state = buildCardSituationState({
-                state: gameState,
-                player,
-                opponent,
-                card,
-              });
-              return (
-                <li key={card.instanceId}>
-                  <CardDisplay
-                    state={state}
-                    footer={
-                      isHuman ? (
-                        <button
-                          type="button"
-                          className="btn btn--small"
-                          onClick={() => onUnpackBackpack?.(index)}
-                          disabled={
-                            player.holdSlots.length >= player.MAX_HOLD_SLOTS
-                          }
-                        >
-                          放入滞留位
-                        </button>
-                      ) : (
-                        <span>AI 收藏中</span>
-                      )
-                    }
-                  />
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
     </section>
   );
 };

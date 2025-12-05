@@ -227,8 +227,11 @@ export interface PlayerState {
   drawsUsed: number;
   baseDraws: number;
   extraDraws: number;
-  holdSlots: CardInstance[];
-  backpack: CardInstance[];
+  handSize: number; // 当前手牌上限
+  targetCard: CardInstance | null; // 当前关注的卡牌(当前回合正在使用的卡牌)
+  handCards: CardInstance[]; // 手牌(已经过了回合, 可以使用的滞留卡牌)
+  drawnCards: CardInstance[]; // 刚抽到的若干等待选择的卡牌
+  stashedCards: CardInstance[]; // 存放的卡牌(滞留卡牌, 当前回合不可用)
   victoryShards: Record<string, number>;
   wins: number;
   passTokens: Array<{ level: number; threshold: number }>;
@@ -237,7 +240,6 @@ export interface PlayerState {
   logPrefix: string;
   buffs: PlayerBuff[];
   isAI?: boolean;
-  MAX_HOLD_SLOTS: number;
 }
 
 // 顶层阶段（Level Phase）
@@ -392,7 +394,8 @@ export type EngineError = {
     | "emptyDeck"
     | "noHoldCard"
     | "maxDrawsReached"
-    | "merchantUnavailable";
+    | "merchantUnavailable"
+    | "handSlotsFull";
   message: string;
 };
 
@@ -411,4 +414,6 @@ export const DEFAULT_MAX_DRAWS = 3;
 export const PLAYER_LABEL: PlayerState["label"] = "Player";
 export const AI_LABEL: PlayerState["label"] = "AI";
 
-export const DEFAULT_MAX_HOLD_SLOTS = 2;
+export const DEFAULT_HAND_SIZE = 5;
+// TODO: remove DEFAULT_MAX_HOLD_SLOTS after all call sites migrate
+export const DEFAULT_MAX_HOLD_SLOTS = DEFAULT_HAND_SIZE;

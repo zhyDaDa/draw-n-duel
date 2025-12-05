@@ -34,12 +34,14 @@ import {
 import { buildCardSituationState } from "../game/situations";
 import {
   type ActionResult,
+  type CardInstance,
   type DrawResult,
   type EngineError,
   type EngineOutcome,
   type GameState,
   type ResolveResult,
   AI_LABEL,
+  DEFAULT_HAND_SIZE,
   PLAYER_LABEL,
 } from "../game/types";
 import { useSettings } from "../context/SettingsContext";
@@ -185,7 +187,7 @@ const GamePlayPage: React.FC = () => {
 
         if (s.subPhase === "checkCanDraw") {
           if (
-            (ai.holdSlots?.length ?? 0) > 0 &&
+            (ai.handCards?.length ?? 0) > 0 &&
             ai.score - opponent.score < 0 &&
             !s.activeCard
           ) {
@@ -242,7 +244,6 @@ const GamePlayPage: React.FC = () => {
           s.subPhase === "waitingDrawChoice" &&
           s.activeCard
         ) {
-          const aiNow = s.players[s.currentPlayerIndex];
           const decide = () => {
             // AI决策
             return "play";
@@ -252,13 +253,8 @@ const GamePlayPage: React.FC = () => {
           await performAiOperation(
             () => {
               let res: EngineOutcome<ActionResult>;
-              if (
-                decision === "hold" &&
-                (aiNow.holdSlots?.length ?? 0) < aiNow.MAX_HOLD_SLOTS
-              ) {
+              if (decision === "hold") {
                 res = stashActiveCard(s);
-              } else if (decision === "hold") {
-                res = discardActiveCard(s);
               } else {
                 res = playActiveCard(s);
               }
@@ -486,12 +482,16 @@ const GamePlayPage: React.FC = () => {
     const current =
       gameState.players?.[gameState.currentPlayerIndex] ??
       gameState.players?.[0];
-    const holdCard = current?.holdSlots?.[0];
+    const handCardCount = current?.handCards?.length ?? 0;
+    const targetHandCard =
+      handCardCount > 0
+        ? current?.handCards?.[handCardCount - 1]
+        : undefined;
     const result = releaseHoldCard(gameState);
-    if (!isEngineError(result) && holdCard) {
+    if (!isEngineError(result) && targetHandCard) {
       registerAnimation({
         type: "release",
-        card: holdCard,
+        card: targetHandCard,
         timestamp: Date.now(),
       });
     }
@@ -545,8 +545,10 @@ const GamePlayPage: React.FC = () => {
     pendingInteraction && interactionOwner && !interactionOwner.isAI
   );
   const interactionLocked = Boolean(pendingInteraction);
-  const holdSlots = currentPlayer?.holdSlots ?? [];
-  const maxHoldSlots = currentPlayer?.MAX_HOLD_SLOTS ?? 2;
+  const drawnCards = currentPlayer?.drawnCards ?? [];
+  const stashedCards = currentPlayer?.stashedCards ?? [];
+  const handCards = currentPlayer?.handCards ?? [];
+  const handSize = currentPlayer?.handSize ?? DEFAULT_HAND_SIZE;
   const activeCard = gameState.activeCard;
   const opponentForCurrent = gameState.players.find(
     (_, idx) => idx !== gameState.currentPlayerIndex
@@ -560,16 +562,16 @@ const GamePlayPage: React.FC = () => {
           card: activeCard,
         })
       : undefined;
-  const holdStates = currentPlayer
-    ? holdSlots.map((card) =>
-        buildCardSituationState({
-          state: gameState,
-          player: currentPlayer,
-          opponent: opponentForCurrent,
-          card,
-        })
-      )
-    : [];
+  const mapToState = (card: CardInstance) =>
+    buildCardSituationState({
+      state: gameState,
+      player: currentPlayer!,
+      opponent: opponentForCurrent,
+      card,
+    });
+  const drawnStates = currentPlayer ? drawnCards.map(mapToState) : [];
+  const stashedStates = currentPlayer ? stashedCards.map(mapToState) : [];
+  const handStates = currentPlayer ? handCards.map(mapToState) : [];
   const deckPerspectivePlayer = currentPlayer ?? gameState.players[0];
   const deckCardStates = deckPerspectivePlayer
     ? gameState.deck.drawPile.map((card) =>
@@ -582,8 +584,7 @@ const GamePlayPage: React.FC = () => {
       )
     : [];
   const canPlay = Boolean(activeCard);
-  const canStash =
-    Boolean(activeCard) && holdSlots.length < currentPlayer.MAX_HOLD_SLOTS;
+  const canStash = Boolean(activeCard);
   const canDiscard = Boolean(activeCard);
   const drawDisabled =
     !isPlayerTurn ||
@@ -612,7 +613,7 @@ const GamePlayPage: React.FC = () => {
   const releaseDisabled =
     !isPlayerTurn ||
     gameState.subPhase !== "checkCanDraw" ||
-    holdSlots.length === 0 ||
+    handCards.length === 0 ||
     Boolean(activeCard) ||
     aiBusy ||
     interactionLocked;
@@ -660,14 +661,14 @@ const GamePlayPage: React.FC = () => {
         },
         {
           key: "release",
-          label: "释放滞留",
+          label: "使用手牌",
           onClick: handleReleaseHold,
           disabled: releaseDisabled,
-          tooltip: "释放滞留位顶部的卡牌并立即结算。",
+          tooltip: "从手牌中打出最右侧的卡牌。",
         },
         {
           key: "discard-hold",
-          label: "丢弃滞留",
+          label: "丢弃手牌",
           onClick: () => {
             if (aiBusy) return;
             const res = discardHoldCard(gameState);
@@ -675,11 +676,11 @@ const GamePlayPage: React.FC = () => {
           },
           disabled:
             !isPlayerTurn ||
-            (holdSlots?.length ?? 0) === 0 ||
+            handCards.length === 0 ||
             Boolean(activeCard) ||
             aiBusy ||
             interactionLocked,
-          tooltip: "丢弃滞留位顶部的卡牌。",
+          tooltip: "丢弃最右侧的手牌。",
         },
       ];
     }
@@ -716,7 +717,7 @@ const GamePlayPage: React.FC = () => {
     releaseDisabled,
     aiBusy,
     isPlayerTurn,
-    holdSlots?.length,
+    handCards.length,
     activeCard,
     handleOutcome,
     gameState,
@@ -849,8 +850,10 @@ const GamePlayPage: React.FC = () => {
               deckStats={deckStats}
               deckRemaining={gameState.deck.drawPile.length}
               activeCardState={activeCardState}
-              holdStates={holdStates}
-              maxHoldSlots={maxHoldSlots}
+              drawnStates={drawnStates}
+              stashedStates={stashedStates}
+              handStates={handStates}
+              handSize={handSize}
               animationEvent={animationEvent}
               pendingInteraction={pendingInteraction}
               interactionOwnerName={

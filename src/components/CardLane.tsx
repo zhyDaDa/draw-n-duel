@@ -1,11 +1,10 @@
-import { Tooltip } from "antd";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Flex, Tooltip } from "antd";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
-import {
-  DEFAULT_MAX_HOLD_SLOTS,
-  type CardInstance,
-  type CardSituationState,
-  type InteractionRequest,
+import type {
+  CardInstance,
+  CardSituationState,
+  InteractionRequest,
 } from "../game/types";
 import CardDisplay, {
   describeCardEffect,
@@ -25,12 +24,21 @@ export interface CardLaneAnimationEvent {
   timestamp: number;
 }
 
+export interface CardDeckStats {
+  total: number;
+  remaining: number;
+  remaining_rare: number;
+  remaining_shard: number;
+}
+
 interface CardLaneProps {
   deckStats: CardDeckStats;
   deckRemaining: number;
   activeCardState?: CardSituationState;
-  holdStates: CardSituationState[];
-  maxHoldSlots?: number;
+  drawnStates: CardSituationState[];
+  stashedStates: CardSituationState[];
+  handStates: CardSituationState[];
+  handSize: number;
   animationEvent: CardLaneAnimationEvent | null;
   pendingInteraction?: InteractionRequest | null;
   interactionOwnerName?: string;
@@ -38,12 +46,15 @@ interface CardLaneProps {
   onDeckClick?: () => void;
 }
 
-type GhostCard = {
-  card: CardInstance;
-  origin: "active" | "hold";
-  animation: "fade-up" | "fade-down";
-  key: number;
-};
+type LaneSlotType = "drawn" | "stashed" | "hand";
+
+interface LaneSlot {
+  key: string;
+  type: LaneSlotType;
+  state?: CardSituationState;
+  label: string;
+  order: number;
+}
 
 const renderTooltip = (state: CardSituationState): ReactNode => {
   const card = state.C_current;
@@ -66,12 +77,6 @@ const renderTooltip = (state: CardSituationState): ReactNode => {
   );
 };
 
-export interface CardDeckStats {
-  total: number;
-  remaining: number;
-  remaining_rare: number;
-  remaining_shard: number;
-}
 const renderDeckTooltip = (stats: CardDeckStats): ReactNode => (
   <div className="card-chip__tooltip tooltip-light__panel">
     <header>
@@ -86,9 +91,7 @@ const renderDeckTooltip = (stats: CardDeckStats): ReactNode => (
 
 const renderCard = (
   state: CardSituationState,
-  options: {
-    extraClass?: string;
-  } = {}
+  options: { extraClass?: string } = {}
 ): ReactNode => {
   const { extraClass = "" } = options;
   return (
@@ -104,162 +107,130 @@ const renderCard = (
   );
 };
 
-const cloneSituationForCard = (
-  card: CardInstance,
-  reference?: CardSituationState
-): CardSituationState | null => {
-  if (!reference) return null;
-  return {
-    ...reference,
-    C_current: card,
-  };
-};
-
 const CardLane: React.FC<CardLaneProps> = ({
   deckStats,
   deckRemaining,
   activeCardState,
-  holdStates,
-  maxHoldSlots = DEFAULT_MAX_HOLD_SLOTS,
+  drawnStates,
+  stashedStates,
+  handStates,
+  handSize,
   animationEvent,
   pendingInteraction,
   interactionOwnerName,
   isInteractionOwner = false,
   onDeckClick,
 }) => {
-  const [ghostCard, setGhostCard] = useState<GhostCard | null>(null);
-  const [stackShiftKey, setStackShiftKey] = useState<number | null>(null);
-  const currentEventKey = animationEvent?.timestamp ?? 0;
-  const slotGroupRef = useRef<HTMLDivElement | null>(null);
-  const resolveGhostReference = (origin: GhostCard["origin"]) =>
-    origin === "active"
-      ? activeCardState ?? holdStates[0]
-      : holdStates[0] ?? activeCardState;
-  const renderGhostContent = (ghost: GhostCard) => {
-    const reference = resolveGhostReference(ghost.origin);
-    const ghostState = cloneSituationForCard(ghost.card, reference);
-    return ghostState ? renderCard(ghostState) : null;
-  };
-
-  const activeCard = activeCardState?.C_current;
-
-  const activeCardClass = useMemo(() => {
-    if (!animationEvent || !activeCard) return "";
-    if (animationEvent.card.instanceId !== activeCard.instanceId) return "";
-    if (animationEvent.type === "draw") return "card-slot__card--draw";
-    return "";
-  }, [animationEvent, activeCard]);
-
   const interactionMessage = pendingInteraction
     ? isInteractionOwner
       ? "等待你做出选择…"
       : `${interactionOwnerName ?? "对手"} 正在考虑…`
     : null;
 
-  const slotCards = useMemo(
-    () =>
-      Array.from({ length: maxHoldSlots }).map(
-        (_, index) => holdStates[index] ?? null
-      ),
-    [holdStates, maxHoldSlots]
-  );
+  const { slots, whiteSlotCount } = useMemo(() => {
+    const safeHandSize = Math.max(handSize, 0);
+    if (safeHandSize === 0) {
+      return { slots: [] as LaneSlot[], whiteSlotCount: 0 };
+    }
 
-  const holdClasses = useMemo(
-    () =>
-      slotCards.map((state, index) => {
-        if (!state) return "";
-        if (!animationEvent) return "";
-        if (
-          animationEvent.type === "stash" &&
-          animationEvent.card.instanceId === state.C_current.instanceId &&
-          index === 0
-        ) {
-          return "card-slot__card--stash";
-        }
+    const maxDrawn = Math.min(drawnStates.length, safeHandSize);
+    const combinedBlue = [...stashedStates, ...handStates];
+    const maxBlue = Math.min(combinedBlue.length, safeHandSize);
+    const whiteSlots = Math.max(safeHandSize - maxBlue, 0);
+    const nextSlots: LaneSlot[] = [];
+
+    for (let i = 0; i < safeHandSize; i += 1) {
+      if (i < whiteSlots) {
+        const state = drawnStates[i];
+        nextSlots.push({
+          key: state ? `drawn-${state.C_current.instanceId}` : `drawn-empty-${i}`,
+          type: "drawn",
+          state,
+          label: `待抽区 ${i + 1}`,
+          order: i,
+        });
+      } else {
+        const blueIndex = i - whiteSlots;
+        const state = combinedBlue[blueIndex];
+        const isStashed = blueIndex < stashedStates.length;
+        const type: LaneSlotType = isStashed ? "stashed" : "hand";
+        const labelPrefix = isStashed ? "封存位" : "手牌位";
+        const typeIndex = isStashed
+          ? blueIndex + 1
+          : blueIndex - stashedStates.length + 1;
+        nextSlots.push({
+          key: state
+            ? `${type}-${state.C_current.instanceId}`
+            : `${type}-empty-${typeIndex}`,
+          type,
+          state,
+          label: `${labelPrefix} ${typeIndex}`,
+          order: i,
+        });
+      }
+    }
+
+    return { slots: nextSlots, whiteSlotCount: Math.min(whiteSlots, maxDrawn) };
+  }, [drawnStates, handStates, handSize, stashedStates]);
+
+  const activeCard = activeCardState?.C_current;
+  const dividerPercent = handSize > 0 ? (whiteSlotCount / handSize) * 100 : null;
+
+  const getSlotAnimationClass = (slot: LaneSlot): string => {
+    if (!slot.state || !animationEvent) return "";
+    if (animationEvent.card.instanceId !== slot.state.C_current.instanceId) {
+      return "";
+    }
+    switch (animationEvent.type) {
+      case "draw":
+        return slot.type === "drawn" ? "card-slot__card--draw" : "";
+      case "stash":
+        return slot.type === "stashed" ? "card-slot__card--stash-enter" : "";
+      case "release":
+        return slot.type === "hand" ? "card-slot__card--release" : "";
+      case "discard":
+      case "play":
+        return slot.type === "drawn" ? "card-slot__card--fade" : "";
+      default:
         return "";
-      }),
-    [slotCards, animationEvent]
-  );
-
-  useEffect(() => {
-    if (!animationEvent) return;
-    if (animationEvent.type === "discard" || animationEvent.type === "play") {
-      setGhostCard({
-        card: animationEvent.card,
-        origin: "active",
-        animation: animationEvent.type === "play" ? "fade-up" : "fade-down",
-        key: animationEvent.timestamp,
-      });
-      return;
-    }
-    if (animationEvent.type === "release") {
-      setGhostCard({
-        card: animationEvent.card,
-        origin: "hold",
-        animation: "fade-up",
-        key: animationEvent.timestamp,
-      });
-      setStackShiftKey(animationEvent.timestamp);
-      return;
-    }
-    if (animationEvent.type === "stash") {
-      setStackShiftKey(animationEvent.timestamp);
-    }
-    setGhostCard(null);
-  }, [animationEvent]);
-
-  useEffect(() => {
-    if (!ghostCard) return;
-    const timer = setTimeout(() => setGhostCard(null), 550);
-    return () => clearTimeout(timer);
-  }, [ghostCard, currentEventKey]);
-
-  useEffect(() => {
-    if (stackShiftKey === null) return;
-    const timer = setTimeout(() => setStackShiftKey(null), 450);
-    return () => clearTimeout(timer);
-  }, [stackShiftKey]);
-
-  const overflowStates = holdStates.slice(2);
-  const overflowCount = overflowStates.length;
-
-  // 是否启用横向滚动：只有当滞留位超过 2 才开启
-  const scrollable = maxHoldSlots > 2;
-
-  // 样式由 CSS 控制，故无需测量宽度（使用 CSS 变量 --card-slot-width）
-
-  // 将鼠标垂直滚轮映射为横向滚动（仅当启用横向滚动时）
-  const onWheelForSlots = (e: React.WheelEvent) => {
-    if (!scrollable) return;
-    const el = slotGroupRef.current;
-    if (!el) return;
-    const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
-    if (Math.abs(delta) > 0) {
-      e.preventDefault();
-      // 使用平滑滚动
-      el.scrollBy({ left: delta, behavior: "smooth" });
     }
   };
 
-  const renderOverflowTooltip = (): ReactNode => {
-    if (overflowCount === 0) return null;
+  const renderSlot = (slot: LaneSlot): ReactNode => {
+    if (!slot.state) {
+      return (
+        <div className="card-slot__placeholder">
+          {slot.type === "drawn"
+            ? "未抽卡"
+            : slot.type === "stashed"
+            ? "无封存"
+            : "空手牌"}
+        </div>
+      );
+    }
+
+    const animationClass = getSlotAnimationClass(slot);
+    const isPending =
+      !!pendingInteraction &&
+      !!activeCard &&
+      slot.state.C_current.instanceId === activeCard.instanceId;
+
     return (
-      <div className="card-slot__overflow-tooltip">
-        {overflowStates.map((state, idx) => (
-          <div
-            key={state.C_current.instanceId}
-            className="card-slot__overflow-item"
-          >
-            <strong>{`滞留位 ${idx + 3}`}</strong>
-            <div className="card-slot__overflow-name">
-              {state.C_current.C_name}
-            </div>
-            <div className="card-slot__overflow-desc">
-              {describeCardEffect(state)}
-            </div>
-            {idx < overflowStates.length - 1 ? <hr /> : null}
+      <div className="card-slot__card-wrapper">
+        {renderCard(slot.state, {
+          extraClass: [
+            `card-slot__card--lane-${slot.type}`,
+            animationClass,
+            isPending ? "card-slot__card--pending" : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+        })}
+        {slot.type === "stashed" ? (
+          <div className="card-slot__gate">
+            <span>封存</span>
           </div>
-        ))}
+        ) : null}
       </div>
     );
   };
@@ -294,77 +265,44 @@ const CardLane: React.FC<CardLaneProps> = ({
       <div className="card-slot card-slot--active">
         {activeCardState && activeCard ? (
           renderCard(activeCardState, {
-            extraClass: [
-              activeCardClass,
-              pendingInteraction ? "card-slot__card--pending" : "",
-            ]
-              .filter(Boolean)
-              .join(" "),
+            extraClass: pendingInteraction ? "card-slot__card--pending" : "",
           })
         ) : (
           <div className="card-slot__placeholder">等待抽牌</div>
         )}
-        {activeCard && pendingInteraction ? (
+        {pendingInteraction ? (
           <div className="card-slot__pending-overlay">
             <span>{interactionMessage}</span>
           </div>
         ) : null}
-        {ghostCard && ghostCard.origin === "active" && (
-          <div
-            key={ghostCard.key}
-            className={`card-slot__ghost card-slot__ghost--${ghostCard.animation}`}
-          >
-            {renderGhostContent(ghostCard)}
-          </div>
-        )}
-        <span className="card-slot__label">当前卡牌</span>
+        <span className="card-slot__label">当前出牌</span>
       </div>
 
-      <div className="card-lane__divider" aria-hidden="true" />
-
-      <div
-        ref={slotGroupRef}
-        onWheel={onWheelForSlots}
-        className={`card-slot-group ${
-          stackShiftKey ? "card-slot-group--animated" : ""
-        } ${scrollable ? "card-slot-group--scrollable" : ""}`}
-      >
-        {slotCards.map((state, index) => (
+      <div className="card-lane__hand" aria-label="手牌与封存区">
+        {dividerPercent !== null ? (
           <div
-            key={state ? state.C_current.instanceId : `slot-${index}`}
-            className="card-slot card-slot--hold"
-          >
-            {state ? (
-              renderCard(state, { extraClass: holdClasses[index] })
-            ) : (
-              <div className="card-slot__placeholder card-slot__placeholder--hold">
-                滞留位空
+            className="card-lane__divider"
+            style={{ left: `${dividerPercent}%` }}
+            aria-hidden="true"
+          />
+        ) : null}
+        <Flex className="card-lane__slots">
+          {slots.length === 0 ? (
+            <div className="card-slot card-slot--empty">
+              <div className="card-slot__placeholder">无手牌</div>
+            </div>
+          ) : (
+            slots.map((slot) => (
+              <div
+                key={slot.key}
+                className={`card-slot card-slot--${slot.type}`}
+              >
+                {renderSlot(slot)}
+                <span className="card-slot__label">{slot.label}</span>
               </div>
-            )}
-            <span className="card-slot__label">
-              滞留位 {index + 1}
-              {index === 1 && overflowCount > 0 ? (
-                <Tooltip
-                  title={renderOverflowTooltip()}
-                  placement="top"
-                  classNames={{ root: "tooltip-light" }}
-                >
-                  <span className="card-slot__overflow-indicator">
-                    +{overflowCount}
-                  </span>
-                </Tooltip>
-              ) : null}
-            </span>
-          </div>
-        ))}
-        {ghostCard && ghostCard.origin === "hold" && (
-          <div
-            key={ghostCard.key}
-            className={`card-slot__ghost card-slot__ghost--${ghostCard.animation}`}
-          >
-            {renderGhostContent(ghostCard)}
-          </div>
-        )}
+            ))
+          )}
+        </Flex>
       </div>
     </section>
   );

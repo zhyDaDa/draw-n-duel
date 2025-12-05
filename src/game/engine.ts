@@ -9,7 +9,7 @@ import {
   AI_LABEL,
   BASE_MATCH_CONFIG,
   BlankDeckState,
-  DEFAULT_MAX_HOLD_SLOTS,
+  DEFAULT_HAND_SIZE,
   PLAYER_LABEL,
   type ActionResult,
   type CardInstance,
@@ -43,8 +43,12 @@ const cloneBuff = (buff: PlayerBuff): PlayerBuff => ({ ...buff });
 
 const clonePlayer = (player: PlayerState): PlayerState => ({
   ...player,
-  holdSlots: player.holdSlots.map(cloneCardInstance),
-  backpack: player.backpack.map(cloneCardInstance),
+  handCards: player.handCards.map(cloneCardInstance),
+  drawnCards: player.drawnCards.map(cloneCardInstance),
+  stashedCards: player.stashedCards.map(cloneCardInstance),
+  targetCard: player.targetCard
+    ? cloneCardInstance(player.targetCard)
+    : null,
   passTokens: player.passTokens.map((token) => ({ ...token })),
   victoryShards: { ...player.victoryShards },
   buffs: player.buffs.map(cloneBuff),
@@ -85,21 +89,35 @@ const appendLog = (state: GameState, message: string): void => {
 const formatScore = (value: number): string =>
   Number.isInteger(value) ? `${value}` : value.toFixed(2);
 
-const hasHoldCapacity = (player: PlayerState): boolean =>
-  player.holdSlots.length < player.MAX_HOLD_SLOTS;
-
 const maxDrawsFor = (player: PlayerState): number =>
   player.baseDraws + player.extraDraws;
+const totalLaneCards = (player: PlayerState): number =>
+  player.drawnCards.length +
+  player.handCards.length +
+  player.stashedCards.length;
 
-const addCardToHold = (player: PlayerState, card: CardInstance): void => {
-  player.holdSlots.unshift(card);
-  if (player.holdSlots.length > player.MAX_HOLD_SLOTS) {
-    player.holdSlots.length = player.MAX_HOLD_SLOTS;
-  }
+const hasFreeLaneSlot = (player: PlayerState): boolean =>
+  totalLaneCards(player) < player.handSize;
+
+const removeDrawnCard = (
+  player: PlayerState,
+  target: CardInstance
+): void => {
+  player.drawnCards = player.drawnCards.filter(
+    (card) => card.instanceId !== target.instanceId
+  );
 };
 
-const removeTopHoldCard = (player: PlayerState): CardInstance | undefined =>
-  player.holdSlots.shift();
+const promoteStashedCardsToHand = (player: PlayerState): void => {
+  if (!player.stashedCards.length) return;
+  player.handCards = [...player.handCards, ...player.stashedCards];
+  player.stashedCards = [];
+};
+
+const resetPlayerHandState = (player: PlayerState): void => {
+  player.drawnCards = [];
+  player.targetCard = null;
+};
 
 const addCardToDiscard = (state: GameState, card: CardInstance): void => {
   state.deck.discardPile.push(card);
@@ -241,9 +259,10 @@ const resetPlayerForLevel = (
   player.drawsUsed = 0;
   player.extraDraws = 0;
   player.baseDraws = levelConfig.baseMaxDraws;
-  if (player.holdSlots.length > player.MAX_HOLD_SLOTS) {
-    player.holdSlots.length = player.MAX_HOLD_SLOTS;
-  }
+  player.handCards = [];
+  player.stashedCards = [];
+  player.drawnCards = [];
+  player.targetCard = null;
 };
 
 const anyShardVictory = (player: PlayerState, threshold: number): boolean =>
@@ -328,8 +347,11 @@ export const createInitialState = (
     drawsUsed: 0,
     baseDraws: levelConfig.baseMaxDraws,
     extraDraws: 0,
-    holdSlots: [],
-    backpack: [],
+    handSize: DEFAULT_HAND_SIZE,
+    targetCard: null,
+    handCards: [],
+    drawnCards: [],
+    stashedCards: [],
     victoryShards: {},
     wins: 0,
     passTokens: [],
@@ -338,7 +360,6 @@ export const createInitialState = (
     logPrefix: label,
     buffs: [],
     isAI: label === AI_LABEL,
-    MAX_HOLD_SLOTS: DEFAULT_MAX_HOLD_SLOTS,
   }));
 
   const initial: GameState = {
@@ -380,6 +401,9 @@ export function nextSubPhase(state: GameState): void {
       break;
     }
     case "turnStart": {
+      const current = state.players[state.currentPlayerIndex];
+      promoteStashedCardsToHand(current);
+      resetPlayerHandState(current);
       player.buffs.forEach((buff) =>
         invokeBuffHook(buff, "onTurnStart", state, player, opponent)
       );
@@ -463,6 +487,13 @@ export const drawCard = (sourceState: GameState): EngineOutcome<DrawResult> => {
     return { type: "maxDrawsReached", message: "抽牌次数已用尽。" };
   }
 
+  if (!hasFreeLaneSlot(player)) {
+    return {
+      type: "handSlotsFull",
+      message: "手牌槽位已满，请先处理现有卡牌。",
+    };
+  }
+
   const card = consumeCard(state);
   if (!card) {
     return { type: "emptyDeck", message: "没有可抽取的卡牌。" };
@@ -470,6 +501,8 @@ export const drawCard = (sourceState: GameState): EngineOutcome<DrawResult> => {
 
   player.drawsUsed += 1;
   state.activeCard = card;
+  player.targetCard = card;
+  player.drawnCards = [card];
   player.buffs.forEach((buff) =>
     invokeBuffHook(buff, "onAfterDraw", state, player, opponent, card)
   );
@@ -510,6 +543,7 @@ export const playActiveCard = (
   const opponent =
     state.players[(state.currentPlayerIndex + 1) % state.players.length];
 
+  removeDrawnCard(player, card);
   player.buffs.forEach((buff) =>
     invokeBuffHook(buff, "onBeforePlay", state, player, opponent, card)
   );
@@ -522,6 +556,7 @@ export const playActiveCard = (
   if (!awaitingInteraction) {
     addCardToDiscard(state, card);
     state.activeCard = undefined;
+    player.targetCard = null;
     player.buffs.forEach((buff) =>
       invokeBuffHook(buff, "onAfterPlay", state, player, opponent, card)
     );
@@ -569,6 +604,7 @@ export const resolveInteractionOption = (
   state.pendingInteraction = null;
   addCardToDiscard(state, interaction.sourceCard);
   state.activeCard = undefined;
+  state.players[interaction.ownerIndex].targetCard = null;
   state.subPhase = interaction.resumeFromSubPhase;
   if (
     state.subPhase === "onUseCard" ||
@@ -600,13 +636,6 @@ export const stashActiveCard = (
       message: "没有可滞留的卡牌。",
     };
   }
-  const sourcePlayer = sourceState.players[sourceState.currentPlayerIndex];
-  if (!hasHoldCapacity(sourcePlayer)) {
-    return {
-      type: "invalidPhase",
-      message: "滞留位已满。",
-    };
-  }
 
   const state = cloneState(sourceState);
   const activeCard = state.activeCard;
@@ -624,13 +653,15 @@ export const stashActiveCard = (
     invokeBuffHook(buff, "onBeforeStash", state, player, opponent, activeCard)
   );
 
-  addCardToHold(state.players[state.currentPlayerIndex], activeCard);
+  removeDrawnCard(player, activeCard);
+  player.stashedCards.unshift(activeCard);
   invokeCardHook(activeCard, "onStash", state, player, opponent);
   appendLog(
     state,
-    `${player.logPrefix} 将 ${activeCard.C_name} 放入滞留位顶部。`
+    `${player.logPrefix} 将 ${activeCard.C_name} 放入滞留区。`
   );
   state.activeCard = undefined;
+  player.targetCard = null;
 
   player.buffs.forEach((buff) =>
     invokeBuffHook(buff, "onAfterStash", state, player, opponent, activeCard)
@@ -673,10 +704,12 @@ export const discardActiveCard = (
   }
 
   setSubPhase(state, "onUseCard");
+  removeDrawnCard(player, activeCard);
   invokeCardHook(activeCard, "onDiscard", state, player, opponent);
   addCardToDiscard(state, activeCard);
   appendLog(state, `${player.logPrefix} 丢弃了 ${activeCard.C_name}`);
   state.activeCard = undefined;
+  player.targetCard = null;
   nextSubPhase(state);
 
   return {
@@ -691,16 +724,16 @@ export const releaseHoldCard = (
   const validation = ensurePhase(sourceState, "playerTurn", "checkCanDraw");
   if (validation) return validation;
   const player = sourceState.players[sourceState.currentPlayerIndex];
-  if (player.holdSlots.length === 0) {
+  if (player.handCards.length === 0) {
     return {
       type: "noHoldCard",
-      message: "滞留位为空。",
+      message: "手牌为空。",
     };
   }
   if (sourceState.activeCard) {
     return {
       type: "invalidPhase",
-      message: "先处理当前抽到的卡牌，再释放滞留卡。",
+      message: "先处理当前抽到的卡牌，再使用手牌。",
     };
   }
 
@@ -708,36 +741,38 @@ export const releaseHoldCard = (
   const actor = state.players[state.currentPlayerIndex];
   const opponent =
     state.players[(state.currentPlayerIndex + 1) % state.players.length];
-  const holdCard = removeTopHoldCard(actor)!;
+  const handCard = actor.handCards.pop()!;
 
-  state.activeCard = holdCard;
+  state.activeCard = handCard;
+  actor.targetCard = handCard;
   actor.buffs.forEach((buff) =>
-    invokeBuffHook(buff, "onBeforePlay", state, actor, opponent, holdCard)
+    invokeBuffHook(buff, "onBeforePlay", state, actor, opponent, handCard)
   );
 
   const messages = applyCardTo(
     state,
     actor,
     opponent,
-    holdCard,
+    handCard,
     "checkCanDraw"
   );
   const awaitingInteraction =
-    state.pendingInteraction?.sourceCard.instanceId === holdCard.instanceId;
+    state.pendingInteraction?.sourceCard.instanceId === handCard.instanceId;
 
   if (!awaitingInteraction) {
-    addCardToDiscard(state, holdCard);
+    addCardToDiscard(state, handCard);
     state.activeCard = undefined;
     actor.buffs.forEach((buff) =>
-      invokeBuffHook(buff, "onAfterPlay", state, actor, opponent, holdCard)
+      invokeBuffHook(buff, "onAfterPlay", state, actor, opponent, handCard)
     );
+    actor.targetCard = null;
     setSubPhase(state, "checkCanDraw");
   }
 
   messages.forEach((message) => appendLog(state, message));
   return {
     state,
-    appliedCard: holdCard,
+    appliedCard: handCard,
     messages,
   };
 };
@@ -748,28 +783,28 @@ export const discardHoldCard = (
   const validation = ensurePhase(sourceState, "playerTurn", "checkCanDraw");
   if (validation) return validation;
   const player = sourceState.players[sourceState.currentPlayerIndex];
-  if (player.holdSlots.length === 0) {
+  if (player.handCards.length === 0) {
     return {
       type: "noHoldCard",
-      message: "滞留位为空。",
+      message: "手牌为空。",
     };
   }
 
   const state = cloneState(sourceState);
-  const holdCard = removeTopHoldCard(state.players[state.currentPlayerIndex])!;
   const actor = state.players[state.currentPlayerIndex];
   const opponent =
     state.players[(state.currentPlayerIndex + 1) % state.players.length];
+  const handCard = actor.handCards.pop()!;
 
-  invokeCardHook(holdCard, "onDiscard", state, actor, opponent);
-  addCardToDiscard(state, holdCard);
-  appendLog(state, `${actor.logPrefix} 丢弃了滞留牌 ${holdCard.C_name}`);
+  invokeCardHook(handCard, "onDiscard", state, actor, opponent);
+  addCardToDiscard(state, handCard);
+  appendLog(state, `${actor.logPrefix} 丢弃了手牌 ${handCard.C_name}`);
   setSubPhase(state, "checkCanDraw");
 
   return {
     state,
-    appliedCard: holdCard,
-    messages: ["滞留牌已丢弃。"],
+    appliedCard: handCard,
+    messages: ["手牌已丢弃。"],
   };
 };
 
