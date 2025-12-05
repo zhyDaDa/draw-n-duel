@@ -1,0 +1,836 @@
+/* Gameplay-specific styles moved from App.css
+   Organized with Less nesting for clarity. 仅用于 GamePlayPage.tsx */
+
+#app-root {
+  width: 1200px;
+  margin: 0 auto;
+  padding: 2vh 2vw;
+  color: #1b1b1f;
+  height: 100%;
+  overflow: hidden;
+
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    height: 12vh;
+
+    &__info {
+      display: flex;
+      align-items: center;
+    }
+
+    &__title {
+      h1 {
+        margin: 0;
+        font-size: 2rem;
+      }
+      p {
+        margin: 0.35rem 0 0;
+        color: #4b5563;
+        font-weight: 500;
+      }
+    }
+
+    &__chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      line-height: 1.2;
+      background: rgba(99, 102, 241, 0.12);
+      color: #4338ca;
+      box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.18);
+    }
+    &__chip--metric {
+      background: rgba(59, 130, 246, 0.12);
+      color: #1d4ed8;
+      box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.18);
+    }
+    &__chip--status {
+      background: rgba(245, 158, 11, 0.15);
+      color: #b45309;
+      box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.2);
+    }
+    &__chip--success {
+      background: rgba(34, 197, 94, 0.16);
+      color: #047857;
+      box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.25);
+    }
+
+    &__actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+  }
+
+  .layout {
+    display: flex;
+    // justify-content: space-between;
+    flex-direction: column;
+    gap: 1rem;
+    height: 85vh;
+
+    &__top {
+      flex: 1;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+      overflow: hidden;
+    }
+
+    &__top-left {
+      flex: 1;
+      height: 100%;
+      padding: 1rem;
+    }
+    &__top-right {
+      width: 320px;
+      max-width: 36%;
+      height: 100%;
+    }
+
+    &__bottom {
+      width: 100%;
+    }
+  }
+
+  .players-wrapper {
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+
+    & .ant-space-item {
+      flex: 1;
+      height: 100%;
+    }
+
+    .player-hud {
+      // width: 16rem;
+      height: 100%;
+      border: 1px solid #e0e7ff;
+      border-radius: 12px;
+      padding: 1rem;
+      background: #ffffff;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+      min-width: 0;
+
+      &--active {
+        border-color: #6366f1;
+        box-shadow: 0 10px 24px rgba(99, 102, 241, 0.18);
+      }
+
+      &__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      &__badge {
+        font-size: 0.85rem;
+        padding: 0.3rem 0.6rem;
+        background: #6366f1;
+        color: #fff;
+        border-radius: 999px;
+      }
+      &__stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem 1rem;
+        margin-bottom: 0.75rem;
+      }
+      &__buffs {
+        margin-bottom: 0.75rem;
+        min-height: 60px;
+      }
+      &__buffs h3,
+      &__backpack h3 {
+        font-size: 0.9rem;
+        margin: 0 0 0.5rem;
+        color: #4b5563;
+      }
+      &__backpack ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 1rem;
+      }
+    }
+  }
+
+  /* 卡牌样式 */
+  .card-display {
+    --card-bg: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+    --card-border: rgba(148, 163, 184, 0.45);
+    --card-bar-bg: linear-gradient(90deg, #4b5563, #6b7280);
+    --card-name-bg: rgba(71, 85, 105, 0.92);
+    --card-name-color: #f8fafc;
+    --card-text-color: #0f172a;
+    --card-effect-color: #1f2937;
+    --card-desc-color: #475569;
+    --card-decor: rgba(100, 116, 139, 0.28);
+    position: relative;
+    width: 178px;
+    min-height: 238px;
+    padding: 1.35rem 1rem 1rem;
+    border-radius: 18px;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg);
+    box-shadow: 0 12px 22px rgba(15, 23, 42, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    color: var(--card-text-color);
+    overflow: hidden;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 1.05rem 1.1rem auto;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.35);
+      opacity: 0.7;
+    }
+    &::after {
+      content: "";
+      position: absolute;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: var(--card-decor);
+      bottom: -34%;
+      right: -20%;
+      filter: blur(0.5px);
+      opacity: 0.25;
+      transform: rotate(-12deg);
+    }
+
+    &--md {
+      width: 178px;
+      min-height: 238px;
+    }
+    &--sm {
+      width: 150px;
+      min-height: 210px;
+      padding: 1.1rem 0.85rem 0.85rem;
+      &::before {
+        inset: 0.95rem 0.9rem auto;
+      }
+      &::after {
+        width: 90px;
+        height: 90px;
+        bottom: -28%;
+        right: -18%;
+      }
+    }
+    &--highlight {
+      box-shadow: 0 14px 28px rgba(245, 158, 11, 0.28);
+      border-color: rgba(245, 158, 11, 0.55);
+      transform: translateY(-4px);
+    }
+
+    &__rarity-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 14px;
+      border-radius: 18px 18px 6px 6px;
+      background: var(--card-bar-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    &__rarity-bar span {
+      font-size: 0.62rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #fff;
+      font-weight: 700;
+      opacity: 0.92;
+    }
+
+    &__header {
+      margin-top: 1.25rem;
+    }
+    &__name {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 0.35rem 0.75rem;
+      border-radius: 0.95rem;
+      background: var(--card-name-bg);
+      color: var(--card-name-color);
+      font-weight: 700;
+      font-size: 1.02rem;
+      line-height: 1.2;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    &__body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      margin-top: 0.3rem;
+    }
+    &__effect {
+      margin: 0;
+      font-weight: 700;
+      color: var(--card-effect-color);
+      line-height: 1.35;
+    }
+    &__desc {
+      margin: 0;
+      color: var(--card-desc-color);
+      font-size: 0.9rem;
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    &__footer {
+      margin-top: auto;
+      font-size: 0.8rem;
+      color: rgba(30, 41, 59, 0.9);
+    }
+
+    &[data-tone="uncommon"] {
+      --card-bg: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+      --card-border: rgba(16, 185, 129, 0.45);
+      --card-bar-bg: linear-gradient(90deg, #0f766e, #34d399);
+      --card-name-bg: rgba(4, 120, 87, 0.92);
+      --card-name-color: #ecfdf5;
+      --card-text-color: #064e3b;
+      --card-effect-color: #065f46;
+      --card-desc-color: #047857;
+      --card-decor: rgba(20, 184, 166, 0.32);
+    }
+    &[data-tone="rare"] {
+      --card-bg: linear-gradient(180deg, #ede9fe 0%, #dbeafe 100%);
+      --card-border: rgba(99, 102, 241, 0.45);
+      --card-bar-bg: linear-gradient(90deg, #312e81, #6366f1);
+      --card-name-bg: rgba(67, 56, 202, 0.88);
+      --card-name-color: #eef2ff;
+      --card-text-color: #312e81;
+    }
+    &[data-tone="legendary"] {
+      --card-bg: linear-gradient(180deg, #fff7ed 0%, #fde68a 100%);
+      --card-border: rgba(245, 158, 11, 0.55);
+      --card-bar-bg: linear-gradient(90deg, #f97316, #ef4444, #8b5cf6);
+    }
+  }
+
+  .action-panel {
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    padding: 1.25rem;
+    background: #f8fafc;
+    &__buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    &__button {
+      display: inline-flex;
+    }
+    &__active-card {
+      margin-top: 1rem;
+    }
+  }
+
+  /* 副面板：卡槽、日志 */
+  .turn-log {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.25rem;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+  }
+  .turn-log__scroll {
+    margin-top: 0.75rem;
+    padding-right: 0.25rem;
+    height: 100%;
+  }
+  .turn-log ol {
+    margin: 0;
+    padding-left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    list-style-position: inside;
+  }
+  .turn-log__item {
+    padding: 0.45rem 0.75rem;
+    border-radius: 10px;
+    background: #f9fafb;
+    color: #374151;
+    line-height: 1.4;
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.18);
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
+  .turn-log__item--latest {
+    background: #eef2ff;
+    box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35);
+    animation: log-flash 0.9s ease;
+  }
+
+  .interaction-modal .ant-modal-body {
+    padding-top: 0.75rem;
+  }
+  .interaction-modal__options {
+    width: 100%;
+  }
+  .interaction-modal__option {
+    text-align: left;
+  }
+  .interaction-modal__option-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .interaction-modal__option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .interaction-modal__option-text strong {
+    font-size: 1rem;
+  }
+  .interaction-modal__option-desc {
+    font-size: 0.85rem;
+    color: #94a3b8;
+  }
+  .interaction-modal__option-cost {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  /* 商人模态 */
+  .merchant-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    z-index: 20;
+  }
+  .merchant-modal {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 2rem;
+    width: min(900px, 100%);
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.35);
+  }
+  .merchant-modal__offers {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    justify-items: center;
+  }
+  .merchant-offer {
+    background: #f9fafb;
+    border: 1px solid #e0e7ff;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 6px 15px rgba(15, 23, 42, 0.12);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .merchant-offer:hover {
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
+    transition: box-shadow 0.25s ease;
+  }
+  .merchant-offer.is-selected {
+    border: 2px solid #3b82f6;
+    box-shadow: 0 16px 28px rgba(59, 130, 246, 0.28);
+  }
+
+  /* Level / Phase modals */
+  .level-result-modal .ant-modal-content {
+    border-radius: 16px;
+  }
+  .level-result__close-wrap {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    z-index: 20;
+  }
+  .level-result__close-btn {
+    border: none;
+    background: transparent;
+    color: #374151;
+    font-size: 1.05rem;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .level-result__close-btn:hover {
+    background: rgba(15, 23, 42, 0.06);
+  }
+  .level-result {
+    padding: 0.5rem 0.5rem 0.25rem;
+  }
+  .level-result h2 {
+    margin: 0 0 0.75rem;
+  }
+  .level-result__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .level-result__row {
+    display: grid;
+    grid-template-columns: 140px 1fr 60px;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .level-result__rank {
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    background: #eef2ff;
+    color: #4338ca;
+  }
+  .level-result__rank--r1 {
+    background: #dcfce7;
+    color: #166534;
+  }
+  .level-result__bar .ant-progress-bg {
+    height: 12px !important;
+    border-radius: 999px;
+  }
+  .level-result__score {
+    font-weight: 800;
+    text-align: right;
+  }
+
+  .phase-intro-modal .ant-modal-content {
+    border-radius: 16px;
+  }
+  .phase-intro {
+    text-align: center;
+    padding: 1rem 0.5rem;
+    animation: phase-pop 800ms ease;
+  }
+  .phase-intro h2 {
+    margin: 0;
+    font-size: 2rem;
+  }
+  .phase-intro__subtitle {
+    margin: 0.25rem 0 0;
+    color: #4b5563;
+  }
+
+  @keyframes phase-pop {
+    0% {
+      transform: scale(1.08);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  /* 卡槽 / 卡牌走廊 */
+  .card-lane {
+    margin-top: 1.25rem;
+    padding: 1rem 1.25rem;
+    border-radius: 14px;
+    border: 1px solid rgba(99, 102, 241, 0.18);
+    background: linear-gradient(
+      120deg,
+      rgba(226, 232, 255, 0.5),
+      rgba(248, 250, 255, 0.92)
+    );
+    display: flex;
+    gap: 1.5rem;
+    align-items: stretch;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    position: relative;
+  }
+  .card-slot__label {
+    font-size: 0.8rem;
+    color: #6b7280;
+  }
+  .card-slot__label .card-slot__overflow-indicator {
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    background: rgba(191, 219, 254, 0.85);
+    font-weight: 700;
+    color: #1d4ed8;
+    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1rem;
+  }
+  .card-slot__deck {
+    width: 150px;
+    min-height: 210px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #4338ca, #312e81);
+    box-shadow: 0 14px 22px rgba(79, 70, 229, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #eef2ff;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    position: relative;
+  }
+  .card-slot__deck::after {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border: 2px solid rgba(255, 255, 255, 0.28);
+    border-radius: 10px;
+  }
+  .card-slot__deck-count {
+    font-size: 2rem;
+    line-height: 1;
+  }
+  .card-slot__deck-label {
+    font-size: 0.85rem;
+    color: #4f46e5;
+    font-weight: 600;
+  }
+  .card-slot__card {
+    width: 150px;
+    min-height: 210px;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+  }
+  .card-slot__card--pending .card-display {
+    filter: saturate(0.7) brightness(0.92);
+  }
+  .card-slot__pending-overlay {
+    position: absolute;
+    inset: 6px;
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.78);
+    color: #f5f5ff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 0.9rem;
+    padding: 0.5rem;
+    z-index: 3;
+    backdrop-filter: blur(2px);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+  .card-slot__card .card-display {
+    width: 100%;
+    box-shadow: 0 14px 26px rgba(15, 23, 42, 0.18);
+  }
+  .card-slot__card .card-display::after {
+    opacity: 0.22;
+  }
+  .card-slot__placeholder {
+    width: 150px;
+    min-height: 210px;
+    border-radius: 14px;
+    border: 2px dashed rgba(148, 163, 184, 0.45);
+    background: rgba(248, 249, 255, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-weight: 500;
+    text-align: center;
+    padding: 0.5rem;
+  }
+  .card-slot__placeholder--hold {
+    border-color: rgba(99, 102, 241, 0.45);
+    background: rgba(224, 231, 255, 0.4);
+    color: #6366f1;
+  }
+  .card-slot-group {
+    display: flex;
+    gap: 1rem;
+  }
+
+  .card-lane__divider {
+    width: 2px;
+    background: repeating-linear-gradient(
+      180deg,
+      rgba(99, 102, 241, 0.6),
+      rgba(99, 102, 241, 0.6) 8px,
+      transparent 8px,
+      transparent 16px
+    );
+    border-radius: 2px;
+    align-self: stretch;
+    opacity: 0.6;
+  }
+
+  .card-slot__card--draw {
+    animation: card-draw 0.55s ease;
+  }
+  .card-slot__card--stash {
+    animation: card-stash 0.55s ease;
+  }
+  .card-slot__ghost {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .card-slot__ghost--fade-up {
+    animation: card-fade-up 0.5s ease forwards;
+  }
+  .card-slot__ghost--fade-down {
+    animation: card-fade-down 0.5s ease forwards;
+  }
+
+  @keyframes card-draw {
+    0% {
+      transform: translateY(-24px) scale(0.9);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes card-stash {
+    0% {
+      transform: translateX(-28px) scale(0.94);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0) scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes card-fade-up {
+    0% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-36px);
+      opacity: 0;
+    }
+  }
+  @keyframes card-fade-down {
+    0% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(36px);
+      opacity: 0;
+    }
+  }
+
+  /* 卡槽横向滚动支持 */
+  :root {
+    --card-slot-width: 160px;
+  }
+  .card-slot {
+    min-width: var(--card-slot-width);
+    flex: 0 0 auto;
+  }
+  .card-slot-group--scrollable {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    max-width: calc(var(--card-slot-width) * 2 + 12px);
+    -ms-overflow-style: none;
+  }
+
+  /* deck 浏览 */
+  .deck-browser-modal__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    padding: 12px 0;
+    justify-items: center;
+    counter-reset: deck-card;
+  }
+  .deck-browser-modal__card {
+    height: 100%;
+    counter-increment: deck-card;
+    position: relative;
+  }
+  .deck-browser-modal__card::after {
+    content: counter(deck-card);
+    bottom: 8px;
+    right: 8px;
+    background: rgb(0, 0, 0);
+    color: #fff;
+    opacity: 0.2;
+    font-size: 1.85rem;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    position: absolute;
+  }
+
+  /* 小屏适配 */
+  @media (max-width: 960px) {
+    .layout {
+      flex-direction: column;
+    }
+    .top-bar {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  /* 动画 keyframes 复用 */
+  @keyframes log-flash {
+    0% {
+      background: #d9e1ff;
+    }
+    100% {
+      background: #eef2ff;
+    }
+  }
+}

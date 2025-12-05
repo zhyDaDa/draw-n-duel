@@ -1,234 +1,62 @@
-#app-root {
-  width: 1200px;
-  margin: 0 auto;
-  padding: 2vh 2vw;
-  color: #1b1b1f;
-  height: 100%;
-  overflow: hidden;
-}
+/* Global styles kept in App.css (gameplay-specific styles moved to pages/GamePlayPage.less) */
 
-.top-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1.5rem;
-  /* margin-bottom: 1.5rem; */
-  height: 12vh;
-}
-
-.top-bar__info {
-  display: flex;
-  align-items: center;
-}
-
-.top-bar__title h1 {
-  margin: 0;
-  font-size: 2rem;
-}
-
-.top-bar__title p {
-  margin: 0.35rem 0 0;
-  color: #4b5563;
-  font-weight: 500;
-}
-
-.top-bar__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.75rem;
-  border-radius: 999px;
-  font-size: 0.85rem;
+/* Buttons (global) */
+.btn {
+  border: none;
+  padding: 0.6rem 1.1rem;
+  border-radius: 10px;
+  font-size: 0.95rem;
   font-weight: 600;
-  line-height: 1.2;
-  background: rgba(99, 102, 241, 0.12);
-  color: #4338ca;
-  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.18);
-}
-
-.top-bar__chip--metric {
-  background: rgba(59, 130, 246, 0.12);
-  color: #1d4ed8;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.18);
-}
-
-.top-bar__chip--status {
-  background: rgba(245, 158, 11, 0.15);
-  color: #b45309;
-  box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.2);
-}
-
-.top-bar__chip--success {
-  background: rgba(34, 197, 94, 0.16);
-  color: #047857;
-  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.25);
-}
-
-.top-bar__actions {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.layout {
-  align-items: flex-start;
-  height: 85vh;
-}
-
-.layout__left,
-.layout__right {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 1.5rem;
-  height: 100%;
-  margin: 0 0.25rem;
-}
-
-.player-hud {
-  width: 16rem;
-  border: 1px solid #e0e7ff;
-  border-radius: 12px;
-  padding: 1rem;
-  background: #ffffff;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
-  min-width: 0; /* allow flex children to shrink and avoid panel being stretched by overflow */
-}
-
-.player-hud--active {
-  border-color: #6366f1;
-  box-shadow: 0 10px 24px rgba(99, 102, 241, 0.18);
-}
-
-.player-hud__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  /* margin-bottom: 1rem; */
-}
-
-.player-hud__badge {
-  font-size: 0.85rem;
-  padding: 0.3rem 0.6rem;
-  background: #6366f1;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
   color: #fff;
-  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.25s ease, filter 0.25s ease;
+  box-shadow: none;
 }
 
-.player-hud__stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem 1rem;
-  margin-bottom: 0.75rem;
+.btn:hover:not(:disabled) { filter: brightness(1.05); }
+.btn:focus-visible { outline: 2px solid rgba(99, 102, 241, 0.45); outline-offset: 3px; }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn--ghost { background: #eef2ff; color: #4338ca; }
+.btn--accent { background: linear-gradient(135deg, #f59e0b, #f97316); color: #1f2937; }
+.btn--small { font-size: 0.85rem; padding: 0.45rem 0.8rem; }
+.btn--merchant { background: linear-gradient(135deg, #064e3b, #047857); color: #ecfdf5; }
+.btn--glow { position: relative; animation: btn-glow 1.2s ease-in-out infinite; }
+.btn--pulse { animation: btn-strong-pulse 1.4s ease-in-out infinite; }
+
+@keyframes btn-glow {
+  0% { box-shadow: 0 0 0 rgba(99, 102, 241, 0); }
+  50% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0.25); }
+  100% { box-shadow: 0 0 0 rgba(99, 102, 241, 0); }
 }
 
-.player-hud__buffs {
-  margin-bottom: 0.75rem;
-  min-height: 60px; /* 固定 Buff 区高度，避免从无到有的撑高跳动 */
+@keyframes btn-strong-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+  70% { box-shadow: 0 0 0 12px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
 }
 
-.player-hud__buffs h3 {
-  font-size: 0.9rem;
-  margin: 0 0 0.5rem;
-  color: #4b5563;
-}
+/* Tooltip (global) */
+.tooltip-light .ant-tooltip-inner { background: #ffffff; color: #1f2937; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2); border-radius: 12px; padding: 0.75rem 1rem; }
+.tooltip-light .ant-tooltip-arrow::before { background: #ffffff; }
+.tooltip-light__panel header { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.35rem; }
+.tooltip-light__panel header span { font-size: 0.75rem; color: #6366f1; }
+.tooltip-light__panel p { margin: 0.1rem 0; font-size: 0.85rem; color: #374151; }
+.tooltip-light__panel ul { list-style: none; margin: 0.35rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.tooltip-light__panel ul li { padding: 0.1rem 0.45rem; border-radius: 999px; background: rgba(99, 102, 241, 0.12); color: #4338ca; font-size: 0.75rem; }
 
-.player-hud__backpack {
-  margin-bottom: 0.75rem;
-}
+.page-loading { display: flex; align-items: center; justify-content: center; min-height: 60vh; font-size: 1.1rem; color: #4b5563; }
 
-.player-hud__backpack h3 {
-  font-size: 0.9rem;
-  margin: 0 0 0.5rem;
-  color: #4b5563;
-}
+/* Entrance / Settings pages (kept here) */
+.entrance-page,
+.settings-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #eef2ff, #f8fafc); padding: 2rem 1rem; }
 
-/* 占位已移除，Buff 区通过 min-height 保持高度 */
+.entrance-page__card,
+.settings-page__card { width: min(420px, 100%); background: #ffffff; border-radius: 18px; padding: 2.5rem 2rem; box-shadow: 0 20px 35px rgba(79,70,229,0.12); text-align: center; }
+.entrance-page__buttons { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.5rem; }
+.entrance-page__buttons .btn { width: 100%; }
+.settings-page__actions { margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.75rem; }
 
-.player-hud__backpack ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 1rem;
-}
-
-.card-display {
-  --card-bg: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
-  --card-border: rgba(148, 163, 184, 0.45);
-  --card-bar-bg: linear-gradient(90deg, #4b5563, #6b7280);
-  --card-name-bg: rgba(71, 85, 105, 0.92);
-  --card-name-color: #f8fafc;
-  --card-text-color: #0f172a;
-  --card-effect-color: #1f2937;
-  --card-desc-color: #475569;
-  --card-decor: rgba(100, 116, 139, 0.28);
-  position: relative;
-  width: 178px;
-  min-height: 238px;
-  padding: 1.35rem 1rem 1rem;
-  border-radius: 18px;
-  border: 1px solid var(--card-border);
-  background: var(--card-bg);
-  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.12);
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  color: var(--card-text-color);
-  overflow: hidden;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-
-.card-display::before {
-  content: "";
-  position: absolute;
-  inset: 1.05rem 1.1rem auto;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.35);
-  opacity: 0.7;
-}
-
-.card-display::after {
-  content: "";
-  position: absolute;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: var(--card-decor);
-  bottom: -34%;
-  right: -20%;
-  filter: blur(0.5px);
-  opacity: 0.25;
-  transform: rotate(-12deg);
-}
-
-.card-display--md {
-  width: 178px;
-  min-height: 238px;
-}
-
-.card-display--sm {
-  width: 150px;
-  min-height: 210px;
-  padding: 1.1rem 0.85rem 0.85rem;
-}
-
-.card-display--sm::before {
-  inset: 0.95rem 0.9rem auto;
-}
-
-.card-display--sm::after {
-  width: 90px;
-  height: 90px;
-  bottom: -28%;
-  right: -18%;
-}
-
-.card-display--highlight {
-  box-shadow: 0 14px 28px rgba(245, 158, 11, 0.28);
-  border-color: rgba(245, 158, 11, 0.55);
-  transform: translateY(-4px);
-}
 
 .card-display__rarity-bar {
   position: absolute;

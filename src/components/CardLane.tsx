@@ -262,22 +262,6 @@ const CardLane: React.FC<CardLaneProps> = ({
         <span className="card-slot__deck-label">牌堆</span>
       </div>
 
-      <div className="card-slot card-slot--active">
-        {activeCardState && activeCard ? (
-          renderCard(activeCardState, {
-            extraClass: pendingInteraction ? "card-slot__card--pending" : "",
-          })
-        ) : (
-          <div className="card-slot__placeholder">等待抽牌</div>
-        )}
-        {pendingInteraction ? (
-          <div className="card-slot__pending-overlay">
-            <span>{interactionMessage}</span>
-          </div>
-        ) : null}
-        <span className="card-slot__label">当前出牌</span>
-      </div>
-
       <div className="card-lane__hand" aria-label="手牌与封存区">
         {dividerPercent !== null ? (
           <div

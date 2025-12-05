@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Flex, Space, Tooltip, Switch } from "antd";
+import { Space, Tooltip, Switch } from "antd";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import CardLane, {
   type CardDeckStats,
@@ -46,6 +46,7 @@ import {
 } from "../game/types";
 import { useSettings } from "../context/SettingsContext";
 import "../App.css";
+import "./GamePlayPage.less";
 
 const isEngineError = <T,>(outcome: EngineOutcome<T>): outcome is EngineError =>
   (outcome as EngineError)?.type !== undefined;
@@ -484,9 +485,7 @@ const GamePlayPage: React.FC = () => {
       gameState.players?.[0];
     const handCardCount = current?.handCards?.length ?? 0;
     const targetHandCard =
-      handCardCount > 0
-        ? current?.handCards?.[handCardCount - 1]
-        : undefined;
+      handCardCount > 0 ? current?.handCards?.[handCardCount - 1] : undefined;
     const result = releaseHoldCard(gameState);
     if (!isEngineError(result) && targetHandCard) {
       registerAnimation({
@@ -793,19 +792,28 @@ const GamePlayPage: React.FC = () => {
         </div>
       </header>
 
-      <Flex className="layout">
-        <div className="layout__left">
-          <Space className="players-wrapper">
-            {gameState.players?.map((player, idx) => (
-              <PlayerHUD
-                key={player.label + idx}
-                gameState={gameState}
-                playerIndex={idx}
-                isCurrent={gameState.currentPlayerIndex === idx && isPlayerTurn}
-              />
-            ))}
-          </Space>
+      <div className="layout">
+        <div className="layout__top">
+          <div className="layout__top-left">
+            <Space className="players-wrapper">
+              {gameState.players?.map((player, idx) => (
+                <PlayerHUD
+                  key={player.label + idx}
+                  gameState={gameState}
+                  playerIndex={idx}
+                  isCurrent={
+                    gameState.currentPlayerIndex === idx && isPlayerTurn
+                  }
+                />
+              ))}
+            </Space>
+          </div>
+          <div className="layout__top-right">
+            <TurnLog entries={gameState.log} />
+          </div>
+        </div>
 
+        <div className="layout__bottom">
           <section className="action-panel">
             <h3>玩家操作</h3>
             <div className="action-panel__buttons">
@@ -864,11 +872,7 @@ const GamePlayPage: React.FC = () => {
             />
           </section>
         </div>
-
-        <div className="layout__right">
-          <TurnLog entries={gameState.log} />
-        </div>
-      </Flex>
+      </div>
       <InteractionModal
         interaction={pendingInteraction}
         visible={Boolean(pendingInteraction && isLocalInteractionOwner)}
