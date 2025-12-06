@@ -1,6 +1,7 @@
 import { Modal, Empty } from "antd";
 import CardDisplay from "./CardDisplay";
 import type { CardSituationState } from "../game/types";
+import "./DeckBrowserModal.less";
 
 interface DeckBrowserModalProps {
   open: boolean;

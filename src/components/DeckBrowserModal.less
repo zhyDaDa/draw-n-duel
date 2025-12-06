@@ -1,0 +1,32 @@
+/* 卡牌展示组件 */
+.deck-browser-modal__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  padding: 12px 0;
+  justify-items: center;
+  counter-reset: deck-card;
+}
+
+.deck-browser-modal__card {
+  height: 100%;
+  counter-increment: deck-card;
+  position: relative;
+}
+.deck-browser-modal__card::after {
+  content: counter(deck-card);
+  bottom: 8px;
+  right: 8px;
+  background: rgb(0, 0, 0);
+  color: #fff;
+  opacity: 0.2;
+  font-size: 1.85rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  position: absolute;
+}

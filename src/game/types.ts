@@ -414,6 +414,6 @@ export const DEFAULT_MAX_DRAWS = 3;
 export const PLAYER_LABEL: PlayerState["label"] = "Player";
 export const AI_LABEL: PlayerState["label"] = "AI";
 
-export const DEFAULT_HAND_SIZE = 5;
+export const DEFAULT_HAND_SIZE = 3;
 // TODO: remove DEFAULT_MAX_HOLD_SLOTS after all call sites migrate
 export const DEFAULT_MAX_HOLD_SLOTS = DEFAULT_HAND_SIZE;

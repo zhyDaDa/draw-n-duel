@@ -332,7 +332,7 @@ export const setLevelPhase = (
   state.phase = phase;
 };
 
-export const createInitialState = (
+export const initializeGameState = (
   seed?: number,
   playerLabels: string[] = [PLAYER_LABEL, AI_LABEL]
 ): GameState => {

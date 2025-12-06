@@ -10,6 +10,7 @@ import CardDisplay, {
   describeCardEffect,
   toneLabel as rarityLabel,
 } from "./CardDisplay";
+import "./CardLane.less";
 
 export type CardLaneAnimationType =
   | "draw"
@@ -262,7 +263,7 @@ const CardLane: React.FC<CardLaneProps> = ({
         <span className="card-slot__deck-label">牌堆</span>
       </div>
 
-      <div className="card-lane__hand" aria-label="手牌与封存区">
+      <Flex className="card-lane__hand" aria-label="手牌与封存区">
         {dividerPercent !== null ? (
           <div
             className="card-lane__divider"
@@ -287,7 +288,7 @@ const CardLane: React.FC<CardLaneProps> = ({
             ))
           )}
         </Flex>
-      </div>
+      </Flex>
     </section>
   );
 };

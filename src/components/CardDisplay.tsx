@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { CardSituationState, Rarity } from "../game/types";
+import "./CardDisplay.less";
 
 type CardTone = Rarity | "cost-mild" | "cost-moderate" | "cost-severe";
 
@@ -52,11 +53,11 @@ export const CardDisplay: React.FC<CardDisplayProps> = ({
   const displayDescription = state.C_current.C_description ?? "";
 
   const classes = [
+    className,
     "card-display",
     `card-display--${variant}`,
     `card-display--${size}`,
     highlight ? "card-display--highlight" : "",
-    className,
   ].filter(Boolean);
 
   return (

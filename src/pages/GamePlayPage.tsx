@@ -15,7 +15,7 @@ import InteractionModal from "../components/InteractionModal";
 import DeckBrowserModal from "../components/DeckBrowserModal";
 import {
   acceptMerchantOffer,
-  createInitialState,
+  initializeGameState,
   discardActiveCard,
   drawCard,
   finishPlayerTurn,
@@ -76,7 +76,7 @@ const GamePlayPage: React.FC = () => {
   );
 
   const [gameState, setGameState] = useState<GameState>(() =>
-    createInitialState(undefined, playerLabels)
+    initializeGameState(undefined, playerLabels)
   );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [animationEvent, setAnimationEvent] =
@@ -92,7 +92,7 @@ const GamePlayPage: React.FC = () => {
   const interactionAutoRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setGameState(createInitialState(undefined, playerLabels));
+    setGameState(initializeGameState(undefined, playerLabels));
     setStatusMessage(null);
     setShowLevelResult(false);
     setShowPhaseIntro(true);
@@ -523,7 +523,7 @@ const GamePlayPage: React.FC = () => {
   };
 
   const handleReset = () => {
-    const s = createInitialState(undefined, playerLabels);
+    const s = initializeGameState(undefined, playerLabels);
     setShowPhaseIntro(true);
     if (phaseIntroTimerRef.current) clearTimeout(phaseIntroTimerRef.current);
     phaseIntroTimerRef.current = setTimeout(() => {
