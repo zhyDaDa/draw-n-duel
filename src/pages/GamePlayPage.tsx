@@ -17,7 +17,7 @@ import {
   acceptMerchantOffer,
   initializeGameState,
   discardActiveCard,
-  drawCard,
+  drawCards,
   finishPlayerTurn,
   finishLevel,
   ensurePhase,
@@ -31,7 +31,9 @@ import {
   stashActiveCard,
   discardHoldCard,
 } from "../game/engine";
-import { buildCardSituationState } from "../game/situations";
+import {
+  buildCardSituationState,
+} from "../game/situations";
 import {
   type ActionResult,
   type CardInstance,
@@ -43,6 +45,7 @@ import {
   AI_LABEL,
   DEFAULT_HAND_SIZE,
   PLAYER_LABEL,
+  type SituationState,
 } from "../game/types";
 import { useSettings } from "../context/SettingsContext";
 import "../App.css";
@@ -83,8 +86,7 @@ const GamePlayPage: React.FC = () => {
     useState<CardLaneAnimationEvent | null>(null);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoAI, setAutoAI] = useState(true);
-  const aiRunningRef = useRef(false);
-  const [aiBusy, setAiBusy] = useState(false);
+  const [aiBusy] = useState(false);
   const [showLevelResult, setShowLevelResult] = useState(false);
   const [showPhaseIntro, setShowPhaseIntro] = useState(false);
   const [showDeckModal, setShowDeckModal] = useState(false);
@@ -134,168 +136,168 @@ const GamePlayPage: React.FC = () => {
     }
   }, [gameState.phase]);
 
-  useEffect(() => {
-    const runWithDelay = async (ms: number) =>
-      await new Promise((r) => setTimeout(r, ms));
+  // useEffect(() => {
+  //   const runWithDelay = async (ms: number) =>
+  //     await new Promise((r) => setTimeout(r, ms));
 
-    // 缩短 AI 的随机延迟: 由原来的 500-1000ms 缩短到 200-400ms，使动作更紧凑但依然可见
-    const randomDelay = () => 200 + Math.floor(Math.random() * 200);
-    const waitRandom = () => runWithDelay(randomDelay());
+  //   // 缩短 AI 的随机延迟: 由原来的 500-1000ms 缩短到 200-400ms，使动作更紧凑但依然可见
+  //   const randomDelay = () => 200 + Math.floor(Math.random() * 200);
+  //   const waitRandom = () => runWithDelay(randomDelay());
 
-    /**
-     * 包装 AI 的单次操作：在操作前后等待一段随机时间。
-     * options.skipPostWait: 若操作后控制权已回到人类玩家，则跳过后置等待（以便立刻解禁 UI）。
-     */
-    const performAiOperation = async (
-      operation: () => boolean,
-      options?: { skipPostWait?: () => boolean }
-    ) => {
-      await waitRandom();
-      const succeeded = operation();
-      const skip = options?.skipPostWait ? options.skipPostWait() : false;
-      if (!skip) {
-        await waitRandom();
-      }
-      return succeeded;
-    };
+  //   /**
+  //    * 包装 AI 的单次操作：在操作前后等待一段随机时间。
+  //    * options.skipPostWait: 若操作后控制权已回到人类玩家，则跳过后置等待（以便立刻解禁 UI）。
+  //    */
+  //   const performAiOperation = async (
+  //     operation: () => boolean,
+  //     options?: { skipPostWait?: () => boolean }
+  //   ) => {
+  //     await waitRandom();
+  //     const succeeded = operation();
+  //     const skip = options?.skipPostWait ? options.skipPostWait() : false;
+  //     if (!skip) {
+  //       await waitRandom();
+  //     }
+  //     return succeeded;
+  //   };
 
-    const getDrawsRemaining = (s: GameState) => {
-      const p = s.players[s.currentPlayerIndex];
-      return p.baseDraws + p.extraDraws - p.drawsUsed;
-    };
+  //   const getDrawsRemaining = (s: GameState) => {
+  //     const p = s.players[s.currentPlayerIndex];
+  //     return p.baseDraws + p.extraDraws - p.drawsUsed;
+  //   };
 
-    const runAiTurn = async () => {
-      if (aiRunningRef.current) return;
+  //   const runAiTurn = async () => {
+  //     if (aiRunningRef.current) return;
 
-      let s = gameState;
-      if (s.phase !== "playerTurn") return;
-      const me = s.players[s.currentPlayerIndex];
-      if (!me?.isAI) return;
+  //     let s = gameState;
+  //     if (s.phase !== "playerTurn") return;
+  //     const me = s.players[s.currentPlayerIndex];
+  //     if (!me?.isAI) return;
 
-      aiRunningRef.current = true;
-      setAiBusy(true);
-      try {
-        if (s.subPhase === "turnStart" || s.subPhase === undefined) {
-          s = beginNextPlayerTurn(s);
-          setGameState(s);
-          // 给出一个短的预览动画帧（比之前短一点）再继续 AI 逻辑
-          await runWithDelay(300);
-        }
+  //     aiRunningRef.current = true;
+  //     setAiBusy(true);
+  //     try {
+  //       if (s.subPhase === "turnStart" || s.subPhase === undefined) {
+  //         s = beginNextPlayerTurn(s);
+  //         setGameState(s);
+  //         // 给出一个短的预览动画帧（比之前短一点）再继续 AI 逻辑
+  //         await runWithDelay(300);
+  //       }
 
-        const opponent =
-          s.players[(s.currentPlayerIndex + 1) % s.players.length];
-        const ai = s.players[s.currentPlayerIndex];
+  //       const opponent =
+  //         s.players[(s.currentPlayerIndex + 1) % s.players.length];
+  //       const ai = s.players[s.currentPlayerIndex];
 
-        if (s.subPhase === "checkCanDraw") {
-          if (
-            (ai.handCards?.length ?? 0) > 0 &&
-            ai.score - opponent.score < 0 &&
-            !s.activeCard
-          ) {
-            await performAiOperation(
-              () => {
-                const res = releaseHoldCard(s);
-                if (!isEngineError(res)) {
-                  s = res.state;
-                  setGameState(s);
-                  return true;
-                }
-                return false;
-              },
-              { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
-            );
-          }
+  //       if (s.subPhase === "checkCanDraw") {
+  //         if (
+  //           (ai.handCards?.length ?? 0) > 0 &&
+  //           ai.score - opponent.score < 0 &&
+  //           !s.activeCard
+  //         ) {
+  //           await performAiOperation(
+  //             () => {
+  //               const res = releaseHoldCard(s);
+  //               if (!isEngineError(res)) {
+  //                 s = res.state;
+  //                 setGameState(s);
+  //                 return true;
+  //               }
+  //               return false;
+  //             },
+  //             { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+  //           );
+  //         }
 
-          const drawsRemaining = getDrawsRemaining(s);
-          const canDraw = drawsRemaining > 0 && s.deck.drawPile.length > 0;
-          if (canDraw && s.subPhase === "checkCanDraw" && !s.activeCard) {
-            const check = ensurePhase(s, "playerTurn", "checkCanDraw");
-            if (!check) {
-              await performAiOperation(
-                () => {
-                  const s1 = advanceSubPhase(s);
-                  const res = drawCard(s1);
-                  if (!isEngineError(res)) {
-                    s = res.state;
-                    setGameState(s);
-                    return true;
-                  }
-                  return false;
-                },
-                { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
-              );
-            }
-          } else if (!s.activeCard) {
-            await performAiOperation(
-              () => {
-                const endState = finishPlayerTurn(s);
-                const started = beginNextPlayerTurn(endState);
-                s = started;
-                setGameState(started);
-                return true;
-              },
-              { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
-            );
-            return;
-          }
-        }
+  //         const drawsRemaining = getDrawsRemaining(s);
+  //         const canDraw = drawsRemaining > 0 && s.deck.drawPile.length > 0;
+  //         if (canDraw && s.subPhase === "checkCanDraw" && !s.activeCard) {
+  //           const check = ensurePhase(s, "playerTurn", "checkCanDraw");
+  //           if (!check) {
+  //             await performAiOperation(
+  //               () => {
+  //                 const s1 = advanceSubPhase(s);
+  //                 const res = drawCard(s1);
+  //                 if (!isEngineError(res)) {
+  //                   s = res.state;
+  //                   setGameState(s);
+  //                   return true;
+  //                 }
+  //                 return false;
+  //               },
+  //               { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+  //             );
+  //           }
+  //         } else if (!s.activeCard) {
+  //           await performAiOperation(
+  //             () => {
+  //               const endState = finishPlayerTurn(s);
+  //               const started = beginNextPlayerTurn(endState);
+  //               s = started;
+  //               setGameState(started);
+  //               return true;
+  //             },
+  //             { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+  //           );
+  //           return;
+  //         }
+  //       }
 
-        if (
-          s.phase === "playerTurn" &&
-          s.subPhase === "waitingDrawChoice" &&
-          s.activeCard
-        ) {
-          const decide = () => {
-            // AI决策
-            return "play";
-          };
-          const decision = decide();
-          let actionSucceeded = false;
-          await performAiOperation(
-            () => {
-              let res: EngineOutcome<ActionResult>;
-              if (decision === "hold") {
-                res = stashActiveCard(s);
-              } else {
-                res = playActiveCard(s);
-              }
-              if (!isEngineError(res)) {
-                s = res.state;
-                setGameState(s);
-                actionSucceeded = true;
-                return true;
-              }
-              return false;
-            },
-            { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
-          );
+  //       if (
+  //         s.phase === "playerTurn" &&
+  //         s.subPhase === "waitingDrawChoice" &&
+  //         s.activeCard
+  //       ) {
+  //         const decide = () => {
+  //           // AI决策
+  //           return "play";
+  //         };
+  //         const decision = decide();
+  //         let actionSucceeded = false;
+  //         await performAiOperation(
+  //           () => {
+  //             let res: EngineOutcome<ActionResult>;
+  //             if (decision === "hold") {
+  //               res = stashActiveCard(s);
+  //             } else {
+  //               res = playActiveCard(s);
+  //             }
+  //             if (!isEngineError(res)) {
+  //               s = res.state;
+  //               setGameState(s);
+  //               actionSucceeded = true;
+  //               return true;
+  //             }
+  //             return false;
+  //           },
+  //           { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+  //         );
 
-          if (actionSucceeded) {
-            await performAiOperation(
-              () => {
-                const endState = finishPlayerTurn(s);
-                const started = beginNextPlayerTurn(endState);
-                s = started;
-                setGameState(started);
-                return true;
-              },
-              { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
-            );
-          }
-        }
-      } finally {
-        aiRunningRef.current = false;
-        setAiBusy(false);
-      }
-    };
+  //         if (actionSucceeded) {
+  //           await performAiOperation(
+  //             () => {
+  //               const endState = finishPlayerTurn(s);
+  //               const started = beginNextPlayerTurn(endState);
+  //               s = started;
+  //               setGameState(started);
+  //               return true;
+  //             },
+  //             { skipPostWait: () => !s.players[s.currentPlayerIndex]?.isAI }
+  //           );
+  //         }
+  //       }
+  //     } finally {
+  //       aiRunningRef.current = false;
+  //       setAiBusy(false);
+  //     }
+  //   };
 
-    if (autoAI && gameState.phase === "playerTurn") {
-      const current = gameState.players[gameState.currentPlayerIndex];
-      if (current?.isAI) {
-        runAiTurn();
-      }
-    }
-  }, [autoAI, gameState]);
+  //   if (autoAI && gameState.phase === "playerTurn") {
+  //     const current = gameState.players[gameState.currentPlayerIndex];
+  //     if (current?.isAI) {
+  //       runAiTurn();
+  //     }
+  //   }
+  // }, [autoAI, gameState]);
 
   const resolveOutcomeMessages = (
     payload: ActionResult | ResolveResult | DrawResult
@@ -317,7 +319,7 @@ const GamePlayPage: React.FC = () => {
       setStatusMessage(outcome.message);
       return;
     }
-    setGameState(outcome.state);
+    setGameState(outcome.state.G_state);
     const mergedMessages = resolveOutcomeMessages(outcome);
     setStatusMessage(mergedMessages?.join(" ") ?? null);
     setGameState((s) => {
@@ -408,12 +410,24 @@ const GamePlayPage: React.FC = () => {
       setStatusMessage(phaseCheck.message);
       return;
     }
-    const drawingState = advanceSubPhase(gameState);
-    const result = drawCard(drawingState);
-    if (!isEngineError(result) && result.drawnCard) {
+    const nextGameState = advanceSubPhase(gameState);
+    const state = {
+      G_state: nextGameState,
+      P_state: nextGameState.players[nextGameState.currentPlayerIndex],
+      OP_state:
+        nextGameState.players[
+          (nextGameState.currentPlayerIndex + 1) % nextGameState.players.length
+        ],
+    } as SituationState;
+    const result = drawCards(state);
+    if (
+      !isEngineError(result) &&
+      result?.drawnCards &&
+      result.drawnCards.length > 0
+    ) {
       registerAnimation({
         type: "draw",
-        card: result.drawnCard,
+        cards: result.drawnCards,
         timestamp: Date.now(),
       });
     }
@@ -427,13 +441,20 @@ const GamePlayPage: React.FC = () => {
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "play",
-        card: activeCard,
+        cards: [activeCard],
         timestamp: Date.now(),
       });
     }
     if (!isEngineError(result)) {
-      const endState = finishPlayerTurn(result.state);
-      handleOutcome({ ...result, state: endState });
+      const endState = finishPlayerTurn(result.state.G_state);
+      handleOutcome({
+        ...result,
+        state: {
+          G_state: endState,
+          P_state: result.state.P_state,
+          OP_state: result.state.OP_state,
+        },
+      });
     } else {
       handleOutcome(result);
     }
@@ -446,13 +467,13 @@ const GamePlayPage: React.FC = () => {
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "stash",
-        card: activeCard,
+        cards: [activeCard],
         timestamp: Date.now(),
       });
     }
     if (!isEngineError(result)) {
-      const endState = finishPlayerTurn(result.state);
-      handleOutcome({ ...result, state: endState });
+      const endState = finishPlayerTurn(result.state.G_state);
+      handleOutcome({ ...result, state: { ...result.state, G_state: endState } });
     } else {
       handleOutcome(result);
     }
@@ -465,13 +486,13 @@ const GamePlayPage: React.FC = () => {
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "discard",
-        card: activeCard,
+        cards: [activeCard],
         timestamp: Date.now(),
       });
     }
     if (!isEngineError(result)) {
-      const endState = finishPlayerTurn(result.state);
-      handleOutcome({ ...result, state: endState });
+      const endState = finishPlayerTurn(result.state.G_state);
+      handleOutcome({ ...result, state: { ...result.state, G_state: endState } });
     } else {
       handleOutcome(result);
     }
@@ -490,7 +511,7 @@ const GamePlayPage: React.FC = () => {
     if (!isEngineError(result) && targetHandCard) {
       registerAnimation({
         type: "release",
-        card: targetHandCard,
+        cards: [targetHandCard],
         timestamp: Date.now(),
       });
     }

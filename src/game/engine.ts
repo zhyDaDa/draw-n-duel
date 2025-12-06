@@ -1,4 +1,4 @@
-import { cloneCardInstance } from "./cards";
+import { cloneCardInstance, cloneSituationState } from "./types";
 import {
   buildDeckForLevel,
   getLevelConfig,
@@ -22,6 +22,7 @@ import {
   type MerchantOffer,
   type PlayerBuff,
   type PlayerState,
+  type SituationState,
 } from "./types";
 
 const RNG_MOD = 0x100000000;
@@ -46,9 +47,7 @@ const clonePlayer = (player: PlayerState): PlayerState => ({
   handCards: player.handCards.map(cloneCardInstance),
   drawnCards: player.drawnCards.map(cloneCardInstance),
   stashedCards: player.stashedCards.map(cloneCardInstance),
-  targetCard: player.targetCard
-    ? cloneCardInstance(player.targetCard)
-    : null,
+  targetCard: player.targetCard ? cloneCardInstance(player.targetCard) : null,
   passTokens: player.passTokens.map((token) => ({ ...token })),
   victoryShards: { ...player.victoryShards },
   buffs: player.buffs.map(cloneBuff),
@@ -91,18 +90,8 @@ const formatScore = (value: number): string =>
 
 const maxDrawsFor = (player: PlayerState): number =>
   player.baseDraws + player.extraDraws;
-const totalLaneCards = (player: PlayerState): number =>
-  player.drawnCards.length +
-  player.handCards.length +
-  player.stashedCards.length;
 
-const hasFreeLaneSlot = (player: PlayerState): boolean =>
-  totalLaneCards(player) < player.handSize;
-
-const removeDrawnCard = (
-  player: PlayerState,
-  target: CardInstance
-): void => {
+const removeDrawnCard = (player: PlayerState, target: CardInstance): void => {
   player.drawnCards = player.drawnCards.filter(
     (card) => card.instanceId !== target.instanceId
   );
@@ -123,22 +112,25 @@ const addCardToDiscard = (state: GameState, card: CardInstance): void => {
   state.deck.discardPile.push(card);
 };
 
-const consumeCard = (state: GameState): CardInstance | undefined => {
-  const card = state.deck.drawPile.shift();
+const consumeCardFromDeck = (
+  state: SituationState
+): CardInstance | undefined => {
+  const card = state.G_state.deck.drawPile.shift();
   if (!card) return undefined;
-  if (card.C_rarity === "rare" || card.C_rarity === "legendary") {
-    state.deck.publicInfo.remainingRare = Math.max(
-      0,
-      state.deck.publicInfo.remainingRare - 1
-    );
-  }
-  if (card.C_keywords?.includes("shard")) {
-    state.deck.publicInfo.remainingShards = Math.max(
-      0,
-      state.deck.publicInfo.remainingShards - 1
-    );
-  }
   return card;
+};
+
+const consumeCardsFromDeck = (
+  state: SituationState,
+  count: number
+): CardInstance[] => {
+  const cards: CardInstance[] = [];
+  for (let i = 0; i < count; i++) {
+    const card = consumeCardFromDeck(state);
+    if (!card) break;
+    cards.push(card);
+  }
+  return cards;
 };
 
 type CardLifecycleHook = "onDraw" | "onPlay" | "onDiscard" | "onStash";
@@ -352,6 +344,7 @@ export const initializeGameState = (
     handCards: [],
     drawnCards: [],
     stashedCards: [],
+    usedCards: [],
     victoryShards: {},
     wins: 0,
     passTokens: [],
@@ -467,52 +460,64 @@ export function setSubPhase(
   state.subPhase = subPhase;
 }
 
-export const drawCard = (sourceState: GameState): EngineOutcome<DrawResult> => {
+export const drawCards = (
+  sourceState: SituationState
+): EngineOutcome<DrawResult> => {
   const validation = ensurePhase(
-    sourceState,
+    sourceState.G_state,
     "playerTurn",
     "prepareDrawingCard"
   );
   if (validation) return validation;
-  if (sourceState.deck.drawPile.length === 0) {
+
+  if (sourceState.G_state.deck.drawPile.length === 0) {
     return { type: "emptyDeck", message: "当前牌堆已空。" };
   }
 
-  const state = cloneState(sourceState);
-  const player = state.players[state.currentPlayerIndex];
-  const opponent =
-    state.players[(state.currentPlayerIndex + 1) % state.players.length];
+  const state = cloneSituationState(sourceState);
+  const player = state.P_state;
+  const opponent = state.OP_state;
 
   if (player.drawsUsed >= maxDrawsFor(player)) {
     return { type: "maxDrawsReached", message: "抽牌次数已用尽。" };
   }
 
-  if (!hasFreeLaneSlot(player)) {
+  const shouldDraw =
+    player.handSize - player.handCards.length - player.stashedCards.length;
+
+  if (shouldDraw <= 0) {
     return {
       type: "handSlotsFull",
       message: "手牌槽位已满，请先处理现有卡牌。",
     };
   }
 
-  const card = consumeCard(state);
-  if (!card) {
+  const cards = consumeCardsFromDeck(state, shouldDraw);
+  if (cards.length === 0) {
     return { type: "emptyDeck", message: "没有可抽取的卡牌。" };
   }
 
   player.drawsUsed += 1;
-  state.activeCard = card;
-  player.targetCard = card;
-  player.drawnCards = [card];
-  player.buffs.forEach((buff) =>
-    invokeBuffHook(buff, "onAfterDraw", state, player, opponent, card)
-  );
-  invokeCardHook(card, "onDraw", state, player, opponent);
+  player.targetCard = cards[0];
+  player.drawnCards = cards;
+  if (player?.buffs && player.buffs.length > 0)
+    player.buffs.forEach((buff) =>
+      invokeBuffHook(
+        buff,
+        "onAfterDraw",
+        state.G_state,
+        player,
+        opponent,
+        cards[0]
+      )
+    );
+  invokeCardHook(cards[0], "onDraw", state.G_state, player, opponent);
 
-  const log = `${player.logPrefix} 抽取了 ${card.C_name}。`;
-  appendLog(state, log);
-  setSubPhase(state, "waitingDrawChoice");
+  const log = `${player.logPrefix} 抽取了 ${cards[0].C_name}。`;
+  appendLog(state.G_state, log);
+  setSubPhase(state.G_state, "waitingDrawChoice");
 
-  return { state, drawnCard: card, messsages: [log] };
+  return { state, drawnCards: cards, messsages: [log] };
 };
 
 export const playActiveCard = (
@@ -566,7 +571,11 @@ export const playActiveCard = (
 
   messages.forEach((message) => appendLog(state, message));
   return {
-    state,
+    state: {
+      G_state: state,
+      P_state: player,
+      OP_state: opponent,
+    },
     appliedCard: card,
     messages,
   };
@@ -615,7 +624,10 @@ export const resolveInteractionOption = (
   }
 
   return {
-    state,
+    state: {
+      G_state: state,
+      P_state: actor,
+    },
     appliedCard: interaction.sourceCard,
     messages: [`${actor.logPrefix} 完成了交互。`],
   };
@@ -656,10 +668,7 @@ export const stashActiveCard = (
   removeDrawnCard(player, activeCard);
   player.stashedCards.unshift(activeCard);
   invokeCardHook(activeCard, "onStash", state, player, opponent);
-  appendLog(
-    state,
-    `${player.logPrefix} 将 ${activeCard.C_name} 放入滞留区。`
-  );
+  appendLog(state, `${player.logPrefix} 将 ${activeCard.C_name} 放入滞留区。`);
   state.activeCard = undefined;
   player.targetCard = null;
 
@@ -670,7 +679,10 @@ export const stashActiveCard = (
   setSubPhase(state, "onStashCard");
   nextSubPhase(state);
   return {
-    state,
+    state: {
+      G_state: state,
+      P_state: player,
+    },
     messages: ["卡牌已放入滞留位。"],
   };
 };
@@ -713,7 +725,10 @@ export const discardActiveCard = (
   nextSubPhase(state);
 
   return {
-    state,
+    state: {
+      G_state: state,
+      P_state: player,
+    },
     messages: ["卡牌已丢弃。"],
   };
 };
@@ -771,7 +786,10 @@ export const releaseHoldCard = (
 
   messages.forEach((message) => appendLog(state, message));
   return {
-    state,
+    state: {
+      G_state: state,
+      P_state: actor,
+    },
     appliedCard: handCard,
     messages,
   };
@@ -802,7 +820,10 @@ export const discardHoldCard = (
   setSubPhase(state, "checkCanDraw");
 
   return {
-    state,
+    state: {
+      G_state: state,
+      P_state: actor,
+    },
     appliedCard: handCard,
     messages: ["手牌已丢弃。"],
   };

@@ -43,6 +43,208 @@ export interface BuffSituationState extends SituationState {
   B_current: CardInstance;
 }
 
+// ==================== Deep Clone Utilities ====================
+// 这些工具函数用于深拷贝游戏状态和卡牌数据
+//
+// 关键原则：
+// 1. 函数类型字段（如 onCreate, onDraw, SituationFunction 等）保持引用，不拷贝
+// 2. 数据类型字段（数组、对象、基本类型）进行深拷贝
+// 3. 递归处理嵌套结构，确保所有可变数据都是独立的
+//
+// 公共 API (可导出使用):
+// - cloneEffectValue: 拷贝单个效果值
+// - cloneCardEffect: 拷贝卡牌效果
+// - cloneCardInstance: 拷贝卡牌实例（保持 instanceId）
+// - cloneGameState: 拷贝完整游戏状态
+// - cloneSituationState: 拷贝情境状态
+//
+// 使用示例：
+// ```typescript
+// // 在卡牌效果中创建状态副本
+// const stateCopy = cloneSituationState(state);
+// stateCopy.P_state.score += 10; // 不会影响原状态
+//
+// // 在 AI 模拟中使用
+// const simulatedState = cloneGameState(currentState);
+// simulateMove(simulatedState); // 不会影响实际游戏状态
+// ```
+
+/**
+ * 深拷贝 EffectValue
+ * - 拷贝 type 数组和 sources 数组，避免共享引用
+ */
+export const cloneEffectValue = (value: EffectValue): EffectValue => ({
+  ...value,
+  type: [...value.type],
+  sources: value.sources ? [...value.sources] : undefined,
+});
+
+/**
+ * 深拷贝 CardEffect
+ * - 递归拷贝 valueDict 中的所有 EffectValue
+ * - 保持函数引用：onCreate, onDisplay, onDraw, onPlay, onDiscard, onStash, interactionAPI
+ */
+export const cloneCardEffect = (effect: CardEffect): CardEffect => ({
+  ...effect,
+  valueDict: Object.fromEntries(
+    Object.entries(effect.valueDict ?? {}).map(([key, val]) => [
+      key,
+      cloneEffectValue(val),
+    ])
+  ),
+});
+
+/**
+ * 深拷贝 CardInstance
+ * - 深拷贝 C_effect (包括 valueDict)
+ * - 拷贝数组：C_keywords, C_levelRange
+ * - 拷贝对象：C_restriction, C_interactionTemplate
+ * - 注意：instanceId 保持不变，如需新 ID 请使用 cards.ts 中的 cloneCardInstance
+ */
+export const cloneCardInstance = (card: CardInstance): CardInstance => ({
+  ...card,
+  C_effect: cloneCardEffect(card.C_effect),
+  C_keywords: card.C_keywords ? [...card.C_keywords] : undefined,
+  C_levelRange: [...card.C_levelRange] as [number, number],
+  C_restriction: card.C_restriction ? { ...card.C_restriction } : undefined,
+  C_interactionTemplate: card.C_interactionTemplate
+    ? cloneInteractionTemplate(card.C_interactionTemplate)
+    : undefined,
+});
+
+/**
+ * 深拷贝 InteractionOption
+ * - 处理单个或数组形式的 effect
+ */
+const cloneInteractionOption = (
+  option: InteractionOption
+): InteractionOption => ({
+  ...option,
+  effect: option.effect
+    ? Array.isArray(option.effect)
+      ? option.effect.map(cloneCardEffect)
+      : cloneCardEffect(option.effect)
+    : undefined,
+});
+
+/**
+ * 深拷贝 InteractionTemplate
+ * - 拷贝所有 options 数组
+ */
+const cloneInteractionTemplate = (
+  template: InteractionTemplate
+): InteractionTemplate => ({
+  ...template,
+  options: template.options.map(cloneInteractionOption),
+});
+
+/**
+ * 深拷贝 InteractionRequest
+ * - 继承 InteractionTemplate 的拷贝
+ * - 深拷贝 sourceCard
+ */
+const cloneInteractionRequest = (
+  request: InteractionRequest
+): InteractionRequest => ({
+  ...cloneInteractionTemplate(request),
+  id: request.id,
+  ownerIndex: request.ownerIndex,
+  sourceCard: cloneCardInstance(request.sourceCard),
+  createdAt: request.createdAt,
+  autoResolveForAI: request.autoResolveForAI,
+  resumeFromSubPhase: request.resumeFromSubPhase,
+  sourceContext: request.sourceContext,
+  isSkippable: request.isSkippable,
+});
+
+/**
+ * 深拷贝 PlayerBuff
+ * - name/description 可能是 SituationFunction，保持引用
+ * - 拷贝 category 数组和 valueDict
+ * - 保持所有回调函数引用：onTurnStart, onTurnEnd, onAfterDraw, 等
+ */
+const clonePlayerBuff = (buff: PlayerBuff): PlayerBuff => ({
+  ...buff,
+  category: buff.category
+    ? Array.isArray(buff.category)
+      ? [...buff.category]
+      : buff.category
+    : undefined,
+  valueDict: buff.valueDict ? { ...buff.valueDict } : undefined,
+});
+
+/**
+ * 深拷贝 DeckState
+ * - 深拷贝 drawPile 和 discardPile 中的所有卡牌
+ * - 拷贝 publicInfo 对象
+ */
+const cloneDeckState = (deck: DeckState): DeckState => ({
+  originalDeckSize: deck.originalDeckSize,
+  drawPile: deck.drawPile.map(cloneCardInstance),
+  discardPile: deck.discardPile.map(cloneCardInstance),
+  publicInfo: { ...deck.publicInfo },
+});
+
+/**
+ * 深拷贝 PlayerState
+ * - 深拷贝所有卡牌相关字段：targetCard, handCards, drawnCards, stashedCards
+ * - 拷贝 victoryShards 对象和 passTokens 数组
+ * - 深拷贝所有 buffs
+ */
+const clonePlayerState = (player: PlayerState): PlayerState => ({
+  ...player,
+  targetCard: player.targetCard ? cloneCardInstance(player.targetCard) : null,
+  handCards: player.handCards.map(cloneCardInstance),
+  drawnCards: player.drawnCards.map(cloneCardInstance),
+  stashedCards: player.stashedCards.map(cloneCardInstance),
+  victoryShards: { ...player.victoryShards },
+  passTokens: player.passTokens.map((token) => ({ ...token })),
+  buffs: player.buffs.map(clonePlayerBuff),
+});
+
+/**
+ * 深拷贝 MerchantOffer
+ * - 深拷贝内部的 buff
+ */
+const cloneMerchantOffer = (offer: MerchantOffer): MerchantOffer => ({
+  cost: offer.cost,
+  buff: clonePlayerBuff(offer.buff),
+});
+
+/**
+ * 深拷贝 GameState
+ * - 完整拷贝整个游戏状态
+ * - 深拷贝 deck, players, activeCard, merchantOffers, pendingInteraction
+ * - 拷贝 config 和 log 数组
+ * - 用于状态快照、回滚、AI 模拟等场景
+ */
+export const cloneGameState = (state: GameState): GameState => ({
+  ...state,
+  config: { ...state.config },
+  deck: cloneDeckState(state.deck),
+  players: state.players.map(clonePlayerState),
+  activeCard: state.activeCard
+    ? cloneCardInstance(state.activeCard)
+    : undefined,
+  merchantOffers: state.merchantOffers.map(cloneMerchantOffer),
+  log: [...state.log],
+  pendingInteraction: state.pendingInteraction
+    ? cloneInteractionRequest(state.pendingInteraction)
+    : null,
+});
+
+/**
+ * 深拷贝 SituationState
+ * - 完整拷贝情境状态（包含游戏状态和玩家状态）
+ * - 深拷贝 G_state (GameState), P_state 和 OP_state (PlayerState)
+ * - 用于在卡牌效果中创建独立的状态副本，避免意外修改原状态
+ */
+export const cloneSituationState = (state: SituationState): SituationState => ({
+  G_state: cloneGameState(state.G_state),
+  P_state: clonePlayerState(state.P_state),
+  OP_state: state.OP_state ? clonePlayerState(state.OP_state) : undefined,
+});
+
 export type SituationFunction<R = void> = R | ((state: SituationState) => R);
 export type CardSituationFunction<R = void> =
   | R
@@ -221,24 +423,49 @@ export const BlankDeckState = {
   },
 } as DeckState;
 
+/**
+ * 玩家在游戏中的完整运行时状态。
+ *
+ * 包含游戏引擎用于跟踪玩家身份、资源、卡牌集合、状态效果以及其他每回合或每场比赛元数据的持久性和瞬时字段。
+ */
 export interface PlayerState {
+  /** 玩家的可读名称或标识符 */
   label: string;
+  /** 玩家当前累积的分数 */
   score: number;
+  /** 玩家本回合已使用的抽牌次数 */
   drawsUsed: number;
+  /** 玩家每回合基础抽牌次数（buff修改前） */
   baseDraws: number;
+  /** 当前回合由效果、物品或能力额外授予的抽牌次数 */
   extraDraws: number;
+  /** 当前最大手牌大小（卡槽上限） */
   handSize: number; // 当前手牌上限
+  /** 玩家本回合当前聚焦或正在使用的卡牌实例；无则为 null（当前关注的卡牌） */
   targetCard: CardInstance | null; // 当前关注的卡牌(当前回合正在使用的卡牌)
+  /** 玩家手牌中滞留过一回合以上可以使用的卡牌 */
   handCards: CardInstance[]; // 手牌(已经过了回合, 可以使用的滞留卡牌)
+  /** 刚抽到的等待选择的卡牌 */
   drawnCards: CardInstance[]; // 刚抽到的若干等待选择的卡牌
+  /** 滞留且当前回合不可用 */
   stashedCards: CardInstance[]; // 存放的卡牌(滞留卡牌, 当前回合不可用)
+  /** 本轮使用过的牌 */
+  usedCards: CardInstance[];
+  /** 胜利碎片 */
   victoryShards: Record<string, number>;
+  /** 玩家在当前会话中赢得的回合或比赛次数 */
   wins: number;
+  /** @deprecated 传递令牌对象数组，表示剩余传递和阈值；每个令牌有等级和阈值 */
   passTokens: Array<{ level: number; threshold: number }>;
+  /** @deprecated 当前护盾/防御值，用于减轻传入伤害或效果 */
   shields: number;
+  /** @deprecated 用于回合间商人/互动的货币或令牌计数 */
   merchantTokens: number;
+  /** 为该玩家记录动作或事件时使用的简短前缀字符串 */
   logPrefix: string;
+  /** 影响行为或统计的活跃临时或永久玩家增益/效果 */
   buffs: PlayerBuff[];
+  /** 可选标志，表示该玩家是否由 AI 控制 */
   isAI?: boolean;
 }
 
@@ -365,13 +592,13 @@ export interface GameState {
 }
 
 export interface DrawResult {
-  state: GameState;
-  drawnCard: CardInstance | null;
+  state: SituationState;
+  drawnCards: CardInstance[];
   messsages: string[];
 }
 
 export interface ResolveResult {
-  state: GameState;
+  state: SituationState;
   appliedCard?: CardInstance;
   messages: string[];
 }

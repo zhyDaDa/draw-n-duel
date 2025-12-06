@@ -1,29 +1,13 @@
 import { CARD_LIBRARY } from "./CARD_LIBRARY";
 import {
   CardDefinition,
-  type CardEffect,
   type CardInstance,
-  type EffectValue,
   createCard,
+  cloneCardEffect,
+  cloneCardInstance as deepCloneCardInstance,
 } from "./types";
 
 let instanceCounter = 1;
-
-const cloneEffectValue = (value: EffectValue): EffectValue => ({
-  ...value,
-  type: [...value.type],
-  sources: value.sources ? [...value.sources] : undefined,
-});
-
-const cloneCardEffect = (effect: CardEffect): CardEffect => ({
-  ...effect,
-  valueDict: Object.fromEntries(
-    Object.entries(effect.valueDict ?? {}).map(([key, val]) => [
-      key,
-      cloneEffectValue(val),
-    ])
-  ),
-});
 
 export const createCardInstance = (
   definition: CardDefinition
@@ -106,11 +90,12 @@ export const getMerchantPool = (level: number): CardDefinition[] =>
     (card) => level >= card.C_levelRange[0] && level <= card.C_levelRange[1]
   );
 
-export const cloneCardInstance = (card: CardInstance): CardInstance => ({
-  ...card,
-  instanceId: instanceCounter++,
-  C_effect: {
-    ...card.C_effect,
-    valueDict: { ...card.C_effect.valueDict },
-  },
-});
+/**
+ * 深拷贝一个卡牌实例并分配新的实例 ID
+ * 用于需要创建独立副本的场景（如复制卡牌效果）
+ */
+export const cloneCardInstance = (card: CardInstance): CardInstance => {
+  const cloned = deepCloneCardInstance(card);
+  cloned.instanceId = instanceCounter++;
+  return cloned;
+};

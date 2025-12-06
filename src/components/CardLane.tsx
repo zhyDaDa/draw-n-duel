@@ -21,7 +21,7 @@ export type CardLaneAnimationType =
 
 export interface CardLaneAnimationEvent {
   type: CardLaneAnimationType;
-  card: CardInstance;
+  cards: CardInstance[];
   timestamp: number;
 }
 
@@ -118,16 +118,8 @@ const CardLane: React.FC<CardLaneProps> = ({
   handSize,
   animationEvent,
   pendingInteraction,
-  interactionOwnerName,
-  isInteractionOwner = false,
   onDeckClick,
 }) => {
-  const interactionMessage = pendingInteraction
-    ? isInteractionOwner
-      ? "等待你做出选择…"
-      : `${interactionOwnerName ?? "对手"} 正在考虑…`
-    : null;
-
   const { slots, whiteSlotCount } = useMemo(() => {
     const safeHandSize = Math.max(handSize, 0);
     if (safeHandSize === 0) {
@@ -144,7 +136,9 @@ const CardLane: React.FC<CardLaneProps> = ({
       if (i < whiteSlots) {
         const state = drawnStates[i];
         nextSlots.push({
-          key: state ? `drawn-${state.C_current.instanceId}` : `drawn-empty-${i}`,
+          key: state
+            ? `drawn-${state.C_current.instanceId}`
+            : `drawn-empty-${i}`,
           type: "drawn",
           state,
           label: `待抽区 ${i + 1}`,
@@ -175,11 +169,18 @@ const CardLane: React.FC<CardLaneProps> = ({
   }, [drawnStates, handStates, handSize, stashedStates]);
 
   const activeCard = activeCardState?.C_current;
-  const dividerPercent = handSize > 0 ? (whiteSlotCount / handSize) * 100 : null;
+  const dividerPercent =
+    handSize > 0 ? (whiteSlotCount / handSize) * 100 : null;
 
   const getSlotAnimationClass = (slot: LaneSlot): string => {
     if (!slot.state || !animationEvent) return "";
-    if (animationEvent.card.instanceId !== slot.state.C_current.instanceId) {
+    if (
+      // !animationEvent.cards.some(
+      //   (c) => c.instanceId === slot.state!.C_current.instanceId
+      // )
+      animationEvent.cards[0].instanceId !== slot.state.C_current.instanceId
+    ) {
+      // 出现动画的卡牌中不包含此卡牌
       return "";
     }
     switch (animationEvent.type) {
