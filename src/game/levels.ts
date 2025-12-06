@@ -1,5 +1,6 @@
 import { createCardInstance, getCardsForLevel } from "./cards";
 import {
+  type CardCreationState,
   type CardInstance,
   type DeckState,
   type LevelConfig,
@@ -75,8 +76,8 @@ export const getLevelConfig = (level: number): LevelConfig => {
 const DEFAULT_DECK_SIZE = 24;
 
 export const buildDeckForLevel = (
-  state: Omit<SituationState, "P_state">,
-  rng: () => number = Math.random
+  state: SituationState,
+  rng: () => number
 ): DeckState => {
   const { level, players } = state.G_state;
   const levelCards = getCardsForLevel(level);
@@ -94,7 +95,15 @@ export const buildDeckForLevel = (
   levelCards.forEach((definition) => {
     for (let i = 0; i < definition.C_baseWeight * adjustment; i += 1) {
       const card = createCardInstance(definition);
-      card.C_effect.onCreate?.({ ...state, C_current: card });
+      // 为 onCreate 创建一个包含当前卡牌的 CardSituationState
+      const cardSituation = state.withContext({ card });
+      const stateWithCard = {
+        P_state: cardSituation.P_state,
+        G_state: cardSituation.G_state,
+        C_current: cardSituation.C_current,
+        card: cardSituation.C_current,
+      } as CardCreationState;
+      card.C_effect.onCreate?.(stateWithCard);
       baseInstances.push(card);
     }
   });

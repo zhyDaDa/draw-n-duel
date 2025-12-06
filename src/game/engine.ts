@@ -139,12 +139,16 @@ const invokeCardHook = (
   card: CardInstance,
   hook: CardLifecycleHook,
   state: GameState,
-  actor: PlayerState,
-  opponent?: PlayerState
+  actorIndex: number
 ): void => {
   const handler = card.C_effect?.[hook];
   if (typeof handler === "function") {
-    handler(buildCardSituationState({ state, player: actor, opponent, card }));
+    const situation = buildCardSituationState({
+      state,
+      playerIndex: actorIndex,
+      card,
+    });
+    handler(situation);
   }
 };
 
@@ -161,15 +165,16 @@ const invokeBuffHook = (
   buff: PlayerBuff,
   hook: BuffLifecycleHook,
   state: GameState,
-  owner: PlayerState,
-  opponent?: PlayerState,
+  ownerIndex: number,
   card?: CardInstance
 ): void => {
   const handler = buff[hook];
   if (typeof handler === "function") {
-    const situation = card
-      ? buildCardSituationState({ state, player: owner, opponent, card })
-      : buildSituationState({ state, player: owner, opponent });
+    const situation = buildSituationState({
+      state,
+      playerIndex: ownerIndex,
+      card,
+    });
     handler(situation);
   }
 };
@@ -224,11 +229,16 @@ const spawnInteractionRequest = (
 const applyCardTo = (
   state: GameState,
   actor: PlayerState,
-  opponent: PlayerState,
   card: CardInstance,
   resumeSubPhase: NonNullable<GameState["subPhase"]>
 ): string[] => {
-  invokeCardHook(card, "onPlay", state, actor, opponent);
+  const actorIndex = state.players.indexOf(actor);
+  invokeCardHook(
+    card,
+    "onPlay",
+    state,
+    actorIndex === -1 ? state.currentPlayerIndex : actorIndex
+  );
   const template = resolveInteractionTemplate(card);
   if (template) {
     const ownerIndex = state.players.indexOf(actor);
@@ -371,9 +381,7 @@ export const initializeGameState = (
   };
 
   initial.deck = buildDeckForLevel(
-    {
-      G_state: initial,
-    },
+    buildSituationState({ state: initial }),
     () => rng.next()
   );
 
@@ -384,8 +392,6 @@ export const initializeGameState = (
 export function nextSubPhase(state: GameState): void {
   if (state.phase !== "playerTurn") return;
   const player = state.players[state.currentPlayerIndex];
-  const opponent =
-    state.players[(state.currentPlayerIndex + 1) % state.players.length];
   const from = state.subPhase;
 
   switch (state.subPhase) {
@@ -398,7 +404,7 @@ export function nextSubPhase(state: GameState): void {
       promoteStashedCardsToHand(current);
       resetPlayerHandState(current);
       player.buffs.forEach((buff) =>
-        invokeBuffHook(buff, "onTurnStart", state, player, opponent)
+        invokeBuffHook(buff, "onTurnStart", state, state.currentPlayerIndex)
       );
       state.subPhase = "checkCanDraw";
       break;
@@ -424,7 +430,7 @@ export function nextSubPhase(state: GameState): void {
     }
     case "turnEnd": {
       player.buffs.forEach((buff) =>
-        invokeBuffHook(buff, "onTurnEnd", state, player, opponent)
+        invokeBuffHook(buff, "onTurnEnd", state, state.currentPlayerIndex)
       );
       if (allPlayersCannotDraw(state)) {
         appendLog(state, "所有玩家抽牌机会已用尽，进入本轮结算。");
@@ -476,7 +482,6 @@ export const drawCards = (
 
   const state = cloneSituationState(sourceState);
   const player = state.P_state;
-  const opponent = state.OP_state;
 
   if (player.drawsUsed >= maxDrawsFor(player)) {
     return { type: "maxDrawsReached", message: "抽牌次数已用尽。" };
@@ -500,18 +505,18 @@ export const drawCards = (
   player.drawsUsed += 1;
   player.targetCard = cards[0];
   player.drawnCards = cards;
+
+  const currentPlayerIndex = state.G_state.players.indexOf(player);
+  const playerIndex =
+    currentPlayerIndex === -1
+      ? state.G_state.currentPlayerIndex
+      : currentPlayerIndex;
+
   if (player?.buffs && player.buffs.length > 0)
     player.buffs.forEach((buff) =>
-      invokeBuffHook(
-        buff,
-        "onAfterDraw",
-        state.G_state,
-        player,
-        opponent,
-        cards[0]
-      )
+      invokeBuffHook(buff, "onAfterDraw", state.G_state, playerIndex, cards[0])
     );
-  invokeCardHook(cards[0], "onDraw", state.G_state, player, opponent);
+  invokeCardHook(cards[0], "onDraw", state.G_state, playerIndex);
 
   const log = `${player.logPrefix} 抽取了 ${cards[0].C_name}。`;
   appendLog(state.G_state, log);
@@ -545,16 +550,14 @@ export const playActiveCard = (
     };
   }
   const player = state.players[state.currentPlayerIndex];
-  const opponent =
-    state.players[(state.currentPlayerIndex + 1) % state.players.length];
 
   removeDrawnCard(player, card);
   player.buffs.forEach((buff) =>
-    invokeBuffHook(buff, "onBeforePlay", state, player, opponent, card)
+    invokeBuffHook(buff, "onBeforePlay", state, state.currentPlayerIndex, card)
   );
   setSubPhase(state, "onUseCard");
 
-  const messages = applyCardTo(state, player, opponent, card, "onUseCard");
+  const messages = applyCardTo(state, player, card, "onUseCard");
   const awaitingInteraction =
     state.pendingInteraction?.sourceCard.instanceId === card.instanceId;
 
@@ -563,7 +566,7 @@ export const playActiveCard = (
     state.activeCard = undefined;
     player.targetCard = null;
     player.buffs.forEach((buff) =>
-      invokeBuffHook(buff, "onAfterPlay", state, player, opponent, card)
+      invokeBuffHook(buff, "onAfterPlay", state, state.currentPlayerIndex, card)
     );
     setSubPhase(state, "onUseCard");
     nextSubPhase(state);
@@ -571,11 +574,10 @@ export const playActiveCard = (
 
   messages.forEach((message) => appendLog(state, message));
   return {
-    state: {
-      G_state: state,
-      P_state: player,
-      OP_state: opponent,
-    },
+    state: buildSituationState({
+      state,
+      playerIndex: state.currentPlayerIndex,
+    }),
     appliedCard: card,
     messages,
   };
@@ -624,10 +626,10 @@ export const resolveInteractionOption = (
   }
 
   return {
-    state: {
-      G_state: state,
-      P_state: actor,
-    },
+    state: buildSituationState({
+      state,
+      playerIndex: interaction.ownerIndex,
+    }),
     appliedCard: interaction.sourceCard,
     messages: [`${actor.logPrefix} 完成了交互。`],
   };
@@ -658,31 +660,41 @@ export const stashActiveCard = (
     };
   }
   const player = state.players[state.currentPlayerIndex];
-  const opponent =
-    state.players[(state.currentPlayerIndex + 1) % state.players.length];
 
   player.buffs.forEach((buff) =>
-    invokeBuffHook(buff, "onBeforeStash", state, player, opponent, activeCard)
+    invokeBuffHook(
+      buff,
+      "onBeforeStash",
+      state,
+      state.currentPlayerIndex,
+      activeCard
+    )
   );
 
   removeDrawnCard(player, activeCard);
   player.stashedCards.unshift(activeCard);
-  invokeCardHook(activeCard, "onStash", state, player, opponent);
+  invokeCardHook(activeCard, "onStash", state, state.currentPlayerIndex);
   appendLog(state, `${player.logPrefix} 将 ${activeCard.C_name} 放入滞留区。`);
   state.activeCard = undefined;
   player.targetCard = null;
 
   player.buffs.forEach((buff) =>
-    invokeBuffHook(buff, "onAfterStash", state, player, opponent, activeCard)
+    invokeBuffHook(
+      buff,
+      "onAfterStash",
+      state,
+      state.currentPlayerIndex,
+      activeCard
+    )
   );
 
   setSubPhase(state, "onStashCard");
   nextSubPhase(state);
   return {
-    state: {
-      G_state: state,
-      P_state: player,
-    },
+    state: buildSituationState({
+      state,
+      playerIndex: state.currentPlayerIndex,
+    }),
     messages: ["卡牌已放入滞留位。"],
   };
 };
@@ -705,8 +717,6 @@ export const discardActiveCard = (
 
   const state = cloneState(sourceState);
   const player = state.players[state.currentPlayerIndex];
-  const opponent =
-    state.players[(state.currentPlayerIndex + 1) % state.players.length];
   const activeCard = state.activeCard;
   if (!activeCard) {
     return {
@@ -717,7 +727,7 @@ export const discardActiveCard = (
 
   setSubPhase(state, "onUseCard");
   removeDrawnCard(player, activeCard);
-  invokeCardHook(activeCard, "onDiscard", state, player, opponent);
+  invokeCardHook(activeCard, "onDiscard", state, state.currentPlayerIndex);
   addCardToDiscard(state, activeCard);
   appendLog(state, `${player.logPrefix} 丢弃了 ${activeCard.C_name}`);
   state.activeCard = undefined;
@@ -725,10 +735,10 @@ export const discardActiveCard = (
   nextSubPhase(state);
 
   return {
-    state: {
-      G_state: state,
-      P_state: player,
-    },
+    state: buildSituationState({
+      state,
+      playerIndex: state.currentPlayerIndex,
+    }),
     messages: ["卡牌已丢弃。"],
   };
 };
@@ -754,23 +764,21 @@ export const releaseHoldCard = (
 
   const state = cloneState(sourceState);
   const actor = state.players[state.currentPlayerIndex];
-  const opponent =
-    state.players[(state.currentPlayerIndex + 1) % state.players.length];
   const handCard = actor.handCards.pop()!;
 
   state.activeCard = handCard;
   actor.targetCard = handCard;
   actor.buffs.forEach((buff) =>
-    invokeBuffHook(buff, "onBeforePlay", state, actor, opponent, handCard)
+    invokeBuffHook(
+      buff,
+      "onBeforePlay",
+      state,
+      state.currentPlayerIndex,
+      handCard
+    )
   );
 
-  const messages = applyCardTo(
-    state,
-    actor,
-    opponent,
-    handCard,
-    "checkCanDraw"
-  );
+  const messages = applyCardTo(state, actor, handCard, "checkCanDraw");
   const awaitingInteraction =
     state.pendingInteraction?.sourceCard.instanceId === handCard.instanceId;
 
@@ -778,7 +786,13 @@ export const releaseHoldCard = (
     addCardToDiscard(state, handCard);
     state.activeCard = undefined;
     actor.buffs.forEach((buff) =>
-      invokeBuffHook(buff, "onAfterPlay", state, actor, opponent, handCard)
+      invokeBuffHook(
+        buff,
+        "onAfterPlay",
+        state,
+        state.currentPlayerIndex,
+        handCard
+      )
     );
     actor.targetCard = null;
     setSubPhase(state, "checkCanDraw");
@@ -786,10 +800,10 @@ export const releaseHoldCard = (
 
   messages.forEach((message) => appendLog(state, message));
   return {
-    state: {
-      G_state: state,
-      P_state: actor,
-    },
+    state: buildSituationState({
+      state,
+      playerIndex: state.currentPlayerIndex,
+    }),
     appliedCard: handCard,
     messages,
   };
@@ -810,20 +824,18 @@ export const discardHoldCard = (
 
   const state = cloneState(sourceState);
   const actor = state.players[state.currentPlayerIndex];
-  const opponent =
-    state.players[(state.currentPlayerIndex + 1) % state.players.length];
   const handCard = actor.handCards.pop()!;
 
-  invokeCardHook(handCard, "onDiscard", state, actor, opponent);
+  invokeCardHook(handCard, "onDiscard", state, state.currentPlayerIndex);
   addCardToDiscard(state, handCard);
   appendLog(state, `${actor.logPrefix} 丢弃了手牌 ${handCard.C_name}`);
   setSubPhase(state, "checkCanDraw");
 
   return {
-    state: {
-      G_state: state,
-      P_state: actor,
-    },
+    state: buildSituationState({
+      state,
+      playerIndex: state.currentPlayerIndex,
+    }),
     appliedCard: handCard,
     messages: ["手牌已丢弃。"],
   };
@@ -938,7 +950,13 @@ const prepareNextLevel = (state: GameState): void => {
   const levelConfig = getLevelConfig(state.level);
 
   const rng = createSeededRng(state.rngSeed);
-  const deck = buildDeckForLevel({ G_state: state }, () => rng.next());
+  const deck = buildDeckForLevel(
+    buildSituationState({
+      state,
+      playerIndex: state.currentPlayerIndex,
+    }),
+    () => rng.next()
+  );
   state.rngSeed = rng.getSeed();
   state.deck = deck;
 

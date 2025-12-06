@@ -59,6 +59,7 @@ interface LaneSlot {
 
 const renderTooltip = (state: CardSituationState): ReactNode => {
   const card = state.C_current;
+  if (!card) return null;
   return (
     <div className="card-chip__tooltip tooltip-light__panel">
       <header>
@@ -136,7 +137,7 @@ const CardLane: React.FC<CardLaneProps> = ({
       if (i < whiteSlots) {
         const state = drawnStates[i];
         nextSlots.push({
-          key: state
+          key: state?.C_current
             ? `drawn-${state.C_current.instanceId}`
             : `drawn-empty-${i}`,
           type: "drawn",
@@ -154,7 +155,7 @@ const CardLane: React.FC<CardLaneProps> = ({
           ? blueIndex + 1
           : blueIndex - stashedStates.length + 1;
         nextSlots.push({
-          key: state
+          key: state?.C_current
             ? `${type}-${state.C_current.instanceId}`
             : `${type}-empty-${typeIndex}`,
           type,
@@ -173,12 +174,14 @@ const CardLane: React.FC<CardLaneProps> = ({
     handSize > 0 ? (whiteSlotCount / handSize) * 100 : null;
 
   const getSlotAnimationClass = (slot: LaneSlot): string => {
+    console.log("Animating slot", slot, animationEvent);
     if (!slot.state || !animationEvent) return "";
+    const currentCard = slot.state.C_current;
+    if (!currentCard) return "";
     if (
-      // !animationEvent.cards.some(
-      //   (c) => c.instanceId === slot.state!.C_current.instanceId
-      // )
-      animationEvent.cards[0].instanceId !== slot.state.C_current.instanceId
+      !animationEvent.cards.some(
+        (c) => c.instanceId === currentCard.instanceId
+      )
     ) {
       // 出现动画的卡牌中不包含此卡牌
       return "";
@@ -215,6 +218,7 @@ const CardLane: React.FC<CardLaneProps> = ({
     const isPending =
       !!pendingInteraction &&
       !!activeCard &&
+      !!slot.state.C_current &&
       slot.state.C_current.instanceId === activeCard.instanceId;
 
     return (

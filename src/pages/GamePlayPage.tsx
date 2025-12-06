@@ -33,6 +33,7 @@ import {
 } from "../game/engine";
 import {
   buildCardSituationState,
+  buildSituationState,
 } from "../game/situations";
 import {
   type ActionResult,
@@ -45,7 +46,6 @@ import {
   AI_LABEL,
   DEFAULT_HAND_SIZE,
   PLAYER_LABEL,
-  type SituationState,
 } from "../game/types";
 import { useSettings } from "../context/SettingsContext";
 import "../App.css";
@@ -319,6 +319,7 @@ const GamePlayPage: React.FC = () => {
       setStatusMessage(outcome.message);
       return;
     }
+    console.log("Handling outcome", outcome);
     setGameState(outcome.state.G_state);
     const mergedMessages = resolveOutcomeMessages(outcome);
     setStatusMessage(mergedMessages?.join(" ") ?? null);
@@ -411,15 +412,15 @@ const GamePlayPage: React.FC = () => {
       return;
     }
     const nextGameState = advanceSubPhase(gameState);
-    const state = {
-      G_state: nextGameState,
-      P_state: nextGameState.players[nextGameState.currentPlayerIndex],
-      OP_state:
-        nextGameState.players[
-          (nextGameState.currentPlayerIndex + 1) % nextGameState.players.length
-        ],
-    } as SituationState;
-    const result = drawCards(state);
+
+    // 问题在这里:需要创建 SituationState 实例,而不是直接传递 GameState
+    const situation = buildSituationState({
+      state: nextGameState,
+      playerIndex: nextGameState.currentPlayerIndex,
+    });
+
+    const result = drawCards(situation);
+
     if (
       !isEngineError(result) &&
       result?.drawnCards &&
@@ -447,13 +448,13 @@ const GamePlayPage: React.FC = () => {
     }
     if (!isEngineError(result)) {
       const endState = finishPlayerTurn(result.state.G_state);
+      const newSituation = buildSituationState({
+        state: endState,
+        playerIndex: endState.currentPlayerIndex,
+      });
       handleOutcome({
         ...result,
-        state: {
-          G_state: endState,
-          P_state: result.state.P_state,
-          OP_state: result.state.OP_state,
-        },
+        state: newSituation,
       });
     } else {
       handleOutcome(result);
@@ -473,7 +474,11 @@ const GamePlayPage: React.FC = () => {
     }
     if (!isEngineError(result)) {
       const endState = finishPlayerTurn(result.state.G_state);
-      handleOutcome({ ...result, state: { ...result.state, G_state: endState } });
+      const newSituation = buildSituationState({
+        state: endState,
+        playerIndex: endState.currentPlayerIndex,
+      });
+      handleOutcome({ ...result, state: newSituation });
     } else {
       handleOutcome(result);
     }
@@ -492,7 +497,11 @@ const GamePlayPage: React.FC = () => {
     }
     if (!isEngineError(result)) {
       const endState = finishPlayerTurn(result.state.G_state);
-      handleOutcome({ ...result, state: { ...result.state, G_state: endState } });
+      const newSituation = buildSituationState({
+        state: endState,
+        playerIndex: endState.currentPlayerIndex,
+      });
+      handleOutcome({ ...result, state: newSituation });
     } else {
       handleOutcome(result);
     }
@@ -570,26 +579,22 @@ const GamePlayPage: React.FC = () => {
   const handCards = currentPlayer?.handCards ?? [];
   const handSize = currentPlayer?.handSize ?? DEFAULT_HAND_SIZE;
   const activeCard = gameState.activeCard;
-  const opponentForCurrent = gameState.players.find(
-    (_, idx) => idx !== gameState.currentPlayerIndex
-  );
   const activeCardState =
     currentPlayer && activeCard
       ? buildCardSituationState({
           state: gameState,
-          player: currentPlayer,
-          opponent: opponentForCurrent,
+          playerIndex: gameState.currentPlayerIndex,
           card: activeCard,
         })
       : undefined;
   const mapToState = (card: CardInstance) =>
     buildCardSituationState({
       state: gameState,
-      player: currentPlayer!,
-      opponent: opponentForCurrent,
+      playerIndex: gameState.currentPlayerIndex,
       card,
     });
   const drawnStates = currentPlayer ? drawnCards.map(mapToState) : [];
+  console.log("drawnStates", drawnStates);
   const stashedStates = currentPlayer ? stashedCards.map(mapToState) : [];
   const handStates = currentPlayer ? handCards.map(mapToState) : [];
   const deckPerspectivePlayer = currentPlayer ?? gameState.players[0];
@@ -597,8 +602,7 @@ const GamePlayPage: React.FC = () => {
     ? gameState.deck.drawPile.map((card) =>
         buildCardSituationState({
           state: gameState,
-          player: deckPerspectivePlayer,
-          opponent: undefined,
+          playerIndex: gameState.players.indexOf(deckPerspectivePlayer),
           card,
         })
       )

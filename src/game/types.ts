@@ -31,16 +31,152 @@ export type Rarity =
   | "legendary"
   | "mythic";
 
-export interface SituationState {
-  G_state: GameState;
-  P_state: PlayerState;
-  OP_state?: PlayerState;
+/**
+ * 游戏情境状态的统一封装类
+ *
+ * 通过 getter 属性提供便捷访问,确保所有引用指向同一个 GameState 对象
+ * 支持深拷贝,拷贝后的对象内部引用保持一致性
+ */
+export class SituationState {
+  private _gameState: GameState;
+  private _currentPlayerIndex: number;
+  private _currentCardInstanceId?: number;
+  /** 直接缓存的卡牌引用,用于 onCreate 等场景 */
+  private _currentCardRef?: CardInstance;
+
+  constructor(params: {
+    gameState: GameState;
+    currentPlayerIndex?: number;
+    currentCard?: CardInstance;
+  }) {
+    this._gameState = params.gameState;
+    this._currentPlayerIndex =
+      params.currentPlayerIndex ?? params.gameState.currentPlayerIndex;
+    if (params.currentCard) {
+      this._currentCardInstanceId = params.currentCard.instanceId;
+      this._currentCardRef = params.currentCard; // 直接缓存引用
+    }
+  }
+
+  /** 获取完整游戏状态 */
+  get G_state(): GameState {
+    return this._gameState;
+  }
+
+  /** 获取当前行动玩家 */
+  get P_state(): PlayerState {
+    return this._gameState.players[this._currentPlayerIndex];
+  }
+
+  /** 获取对手玩家 (单人对战场景) */
+  get OP_state(): PlayerState | undefined {
+    const opponentIndex =
+      (this._currentPlayerIndex + 1) % this._gameState.players.length;
+    return this._gameState.players[opponentIndex];
+  }
+
+  /** 获取当前关注的卡牌 */
+  get C_current(): CardInstance | undefined {
+    // 如果有直接缓存的引用,优先返回
+    if (this._currentCardRef) {
+      return this._currentCardRef;
+    }
+
+    // 否则通过 instanceId 在游戏状态中查找
+    if (!this._currentCardInstanceId) return undefined;
+
+    // 在各个卡牌集合中查找
+    for (const player of this._gameState.players) {
+      const found =
+        player.drawnCards.find(
+          (c) => c.instanceId === this._currentCardInstanceId
+        ) ||
+        player.handCards.find(
+          (c) => c.instanceId === this._currentCardInstanceId
+        ) ||
+        player.stashedCards.find(
+          (c) => c.instanceId === this._currentCardInstanceId
+        );
+      if (found) return found;
+    }
+
+    if (
+      this._gameState.activeCard?.instanceId === this._currentCardInstanceId
+    ) {
+      return this._gameState.activeCard;
+    }
+
+    return undefined;
+  }
+
+  /** 设置当前关注的卡牌 */
+  setCard(card: CardInstance | undefined): void {
+    this._currentCardInstanceId = card?.instanceId;
+    this._currentCardRef = card; // 同时更新缓存引用
+  }
+
+  /** 设置当前行动玩家 */
+  setCurrentPlayerIndex(index: number): void {
+    if (index >= 0 && index < this._gameState.players.length) {
+      this._currentPlayerIndex = index;
+    }
+  }
+
+  /** 深拷贝情境状态 */
+  clone(): SituationState {
+    const clonedGameState = cloneGameState(this._gameState);
+    const clonedCard = this.C_current
+      ? clonedGameState.players
+          .flatMap((p) => [...p.drawnCards, ...p.handCards, ...p.stashedCards])
+          .find((c) => c.instanceId === this._currentCardInstanceId) ||
+        clonedGameState.activeCard
+      : undefined;
+
+    return new SituationState({
+      gameState: clonedGameState,
+      currentPlayerIndex: this._currentPlayerIndex,
+      currentCard: clonedCard,
+    });
+  }
+
+  /** 创建新的情境状态,指向相同的 GameState 但使用不同的玩家/卡牌视角 */
+  withContext(params: {
+    playerIndex?: number;
+    card?: CardInstance;
+  }): SituationState {
+    return new SituationState({
+      gameState: this._gameState,
+      currentPlayerIndex: params.playerIndex ?? this._currentPlayerIndex,
+      currentCard: params.card,
+    });
+  }
 }
+
+/**
+ * 卡牌创建时的特殊状态
+ * 此时卡牌还未加入游戏状态,直接传递卡牌引用
+ */
+export interface CardCreationState {
+  readonly G_state: GameState;
+  readonly P_state?: PlayerState;
+  readonly OP_state?: PlayerState;
+  /** 直接传递的卡牌引用,而非通过 ID 查找 */
+  readonly card: CardInstance;
+}
+
+/**
+ * 确保 C_current 存在的 SituationState
+ * 用于卡牌效果函数,保证能访问当前卡牌
+ */
 export interface CardSituationState extends SituationState {
-  C_current: CardInstance;
+  readonly C_current: CardInstance;
 }
+
+/**
+ * 确保 C_current 存在的 SituationState(用于 Buff 效果)
+ */
 export interface BuffSituationState extends SituationState {
-  B_current: CardInstance;
+  readonly C_current: CardInstance;
 }
 
 // ==================== Deep Clone Utilities ====================
@@ -236,14 +372,15 @@ export const cloneGameState = (state: GameState): GameState => ({
 /**
  * 深拷贝 SituationState
  * - 完整拷贝情境状态（包含游戏状态和玩家状态）
- * - 深拷贝 G_state (GameState), P_state 和 OP_state (PlayerState)
+ * - 使用 SituationState 类的 clone() 方法
  * - 用于在卡牌效果中创建独立的状态副本，避免意外修改原状态
  */
-export const cloneSituationState = (state: SituationState): SituationState => ({
-  G_state: cloneGameState(state.G_state),
-  P_state: clonePlayerState(state.P_state),
-  OP_state: state.OP_state ? clonePlayerState(state.OP_state) : undefined,
-});
+export const cloneSituationState = (state: SituationState): SituationState => {
+  // 如果传入的不是实例只是对象，则先构造实例
+  if (!(state instanceof SituationState)) {
+    return new SituationState(state);
+  } else return state.clone();
+};
 
 export type SituationFunction<R = void> = R | ((state: SituationState) => R);
 export type CardSituationFunction<R = void> =
@@ -262,13 +399,14 @@ export interface CardEffect {
   type: EffectType;
   target?: TargetType;
   valueDict: Record<string, EffectValue>;
-  notes?: string | CardSituationFunction<string>;
-  onCreate?: (state: Omit<CardSituationState, "P_state">) => void;
-  onDisplay?: CardSituationFunction<void>;
-  onDraw?: CardSituationFunction<void>;
-  onPlay?: CardSituationFunction<void>;
-  onDiscard?: CardSituationFunction<void>;
-  onStash?: CardSituationFunction<void>;
+  notes?: string | ((state: CardSituationState) => string);
+  /** onCreate 特殊:直接传递卡牌引用,不通过游戏状态查找 */
+  onCreate?: (state: CardCreationState) => void;
+  onDisplay?: (state: CardSituationState) => void;
+  onDraw?: (state: CardSituationState) => void;
+  onPlay?: (state: CardSituationState) => void;
+  onDiscard?: (state: CardSituationState) => void;
+  onStash?: (state: CardSituationState) => void;
   interactionAPI?: any;
 }
 

@@ -24,9 +24,10 @@ export const CARD_LIBRARY = [
         return `+ ${score.modified ?? score.base} 分`;
       },
       onCreate: (state) => {
+        // 直接修改传入的卡牌引用
         const delta = (state.G_state.level + 1) ** 2;
         const score = delta + 1 + randomInt(-delta, delta);
-        state.C_current.C_effect.valueDict.score.base = score;
+        state.card.C_effect.valueDict.score.base = score;
       },
       onPlay(state) {
         const score = state.C_current.C_effect.valueDict.score;
@@ -56,9 +57,10 @@ export const CARD_LIBRARY = [
         } 分`;
       },
       onCreate: (state) => {
+        // 直接修改传入的卡牌引用
         const delta = (state.G_state.level + 1) * 2;
         const score = delta * 0.5 + 1 + randomInt(-delta, delta) * 0.5;
-        state.C_current.C_effect.valueDict.score.base = score;
+        state.card.C_effect.valueDict.score.base = score;
       },
       onPlay(state) {
         const score = state.C_current.C_effect.valueDict.score;
