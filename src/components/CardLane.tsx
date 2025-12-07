@@ -1,5 +1,5 @@
 import { Flex, Tooltip } from "antd";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react"; // 添加 useRef
 import type { ReactNode } from "react";
 import type {
   CardInstance,
@@ -121,7 +121,24 @@ const CardLane: React.FC<CardLaneProps> = ({
   pendingInteraction,
   onDeckClick,
 }) => {
-  const { slots, whiteSlotCount } = useMemo(() => {
+  const handRef = useRef<HTMLDivElement>(null); // 添加 ref
+
+  // 添加滚轮处理函数
+  const onWheel = (e: React.WheelEvent) => {
+    const el = handRef.current;
+    if (!el) return;
+    const canScrollH = el.scrollWidth > el.clientWidth + 1;
+    if (!canScrollH) return; // 无需横向滚动
+
+    // 若有水平滚动量直接使用，否则将垂直转为水平滚动
+    const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+    if (Math.abs(delta) > 0) {
+      e.preventDefault();
+      el.scrollLeft += delta / 5;
+    }
+  };
+
+  const { slots } = useMemo(() => {
     const safeHandSize = Math.max(handSize, 0);
     if (safeHandSize === 0) {
       return { slots: [] as LaneSlot[], whiteSlotCount: 0 };
@@ -170,8 +187,6 @@ const CardLane: React.FC<CardLaneProps> = ({
   }, [drawnStates, handStates, handSize, stashedStates]);
 
   const activeCard = activeCardState?.C_current;
-  const dividerPercent =
-    handSize > 0 ? (whiteSlotCount / handSize) * 100 : null;
 
   const getSlotAnimationClass = (slot: LaneSlot): string => {
     console.log("Animating slot", slot, animationEvent);
@@ -179,9 +194,7 @@ const CardLane: React.FC<CardLaneProps> = ({
     const currentCard = slot.state.C_current;
     if (!currentCard) return "";
     if (
-      !animationEvent.cards.some(
-        (c) => c.instanceId === currentCard.instanceId
-      )
+      !animationEvent.cards.some((c) => c.instanceId === currentCard.instanceId)
     ) {
       // 出现动画的卡牌中不包含此卡牌
       return "";
@@ -268,14 +281,12 @@ const CardLane: React.FC<CardLaneProps> = ({
         <span className="card-slot__deck-label">牌堆</span>
       </div>
 
-      <Flex className="card-lane__hand" aria-label="手牌与封存区">
-        {dividerPercent !== null ? (
-          <div
-            className="card-lane__divider"
-            style={{ left: `${dividerPercent}%` }}
-            aria-hidden="true"
-          />
-        ) : null}
+      <Flex
+        ref={handRef} // 添加 ref
+        className="card-lane__hand"
+        aria-label="卡槽区"
+        onWheel={onWheel} // 添加滚轮事件
+      >
         <Flex className="card-lane__slots">
           {slots.length === 0 ? (
             <div className="card-slot card-slot--empty">

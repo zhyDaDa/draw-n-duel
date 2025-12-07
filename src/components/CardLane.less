@@ -1,6 +1,22 @@
 .card-lane__hand {
   flex: 1;
-  justify-content: center;
+  overflow-x: scroll;
+  padding-bottom: 0.75rem;
+
+  &::-webkit-scrollbar {
+    height: 8px;
+  }
+  &::-webkit-scrollbar-track {
+    background: rgba(226, 232, 255, 0.5);
+    border-radius: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.6);
+    border-radius: 4px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(99, 102, 241, 0.8);
+  }
 
   .card-lane__slots {
     gap: 8px;
@@ -10,7 +26,7 @@
 /* 卡槽 / 卡牌走廊 */
 .card-lane {
   margin-top: 1.25rem;
-  padding: 1rem 1.25rem;
+  padding: 1rem 1.25rem 0.25rem;
   border-radius: 14px;
   border: 1px solid rgba(99, 102, 241, 0.18);
   background: linear-gradient(
