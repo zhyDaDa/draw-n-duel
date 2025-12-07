@@ -778,7 +778,10 @@ const GamePlayPage: React.FC = () => {
               <p>
                 模式：{gameMode === "solo" ? "单人" : "对战"}｜层级{" "}
                 {gameState.level}
-                ｜阶段：{gameState.phase}
+              </p>
+              <p>
+                阶段：{gameState.phase}
+                ｜子阶段： {gameState.subPhase ?? "无"}
               </p>
             </div>
             {statusMessage ? (
