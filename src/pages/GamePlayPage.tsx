@@ -37,9 +37,9 @@ import {
 } from "../game/situations";
 import {
   type ActionResult,
-  type CardHandler,
   type CardInstance,
   type CardSituationFunction,
+  type CardSituationState,
   type DrawResult,
   type EngineError,
   type EngineOutcome,
@@ -437,14 +437,13 @@ const GamePlayPage: React.FC = () => {
     handleOutcome(result);
   };
 
-  const handlePlay: CardHandler<void> = (card: CardInstance) => {
+  const handlePlay: CardSituationFunction<void> = (state: CardSituationState) => {
     if (aiBusy || interactionLocked) return;
-    gameState.activeCard = card;
-    const result = playActiveCard(gameState);
-    if (!isEngineError(result) && card) {
+    const result = playActiveCard(state);
+    if (!isEngineError(result) && state.C_current) {
       registerAnimation({
         type: "play",
-        cards: [gameState.activeCard],
+        cards: [state.C_current],
         timestamp: Date.now(),
       });
     }
@@ -711,13 +710,6 @@ const GamePlayPage: React.FC = () => {
       ];
     }
     return [
-      {
-        key: "play",
-        label: "结算卡牌",
-        onClick: handlePlay,
-        disabled: playDisabled,
-        tooltip: "立即结算这张卡牌的效果。",
-      },
       {
         key: "stash",
         label: "滞留",

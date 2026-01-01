@@ -1,4 +1,8 @@
-import { cloneCardInstance, cloneSituationState } from "./types";
+import {
+  cloneCardInstance,
+  cloneSituationState,
+  type CardSituationState,
+} from "./types";
 import {
   buildDeckForLevel,
   getLevelConfig,
@@ -526,34 +530,41 @@ export const drawCards = (
 };
 
 export const playActiveCard = (
-  sourceState: GameState
+  sourceState: CardSituationState
 ): EngineOutcome<ActionResult> => {
+  // 验证阶段
   const validation = ensurePhase(
-    sourceState,
+    sourceState.G_state,
     "playerTurn",
     "waitingDrawChoice"
   );
   if (validation) return validation;
-  if (!sourceState.activeCard) {
+
+  if (!sourceState.C_current) {
     return {
       type: "invalidPhase",
       message: "当前没有待结算的卡牌。",
     };
   }
 
-  const state = cloneState(sourceState);
-  const card = state.activeCard;
+  // 克隆整个 SituationState（会同时克隆 GameState 并在克隆中映射当前卡牌）
+  const situation = cloneSituationState(sourceState);
+  const state = situation.G_state;
+  const card = situation.C_current;
   if (!card) {
     return {
       type: "invalidPhase",
       message: "当前没有待结算的卡牌。",
     };
   }
-  const player = state.players[state.currentPlayerIndex];
 
+  const player = situation.P_state;
+  const playerIndex = state.players.indexOf(player);
+
+  // 从玩家的抽牌列表移除该卡（克隆后的引用）并触发前置 Buff 钩子
   removeDrawnCard(player, card);
   player.buffs.forEach((buff) =>
-    invokeBuffHook(buff, "onBeforePlay", state, state.currentPlayerIndex, card)
+    invokeBuffHook(buff, "onBeforePlay", state, playerIndex, card)
   );
   setSubPhase(state, "onUseCard");
 
@@ -562,12 +573,13 @@ export const playActiveCard = (
     state.pendingInteraction?.sourceCard.instanceId === card.instanceId;
 
   if (!awaitingInteraction) {
+    // 新模型不再使用 state.activeCard，直接将卡片结算并丢弃
     addCardToDiscard(state, card);
-    state.activeCard = undefined;
     player.targetCard = null;
     player.buffs.forEach((buff) =>
-      invokeBuffHook(buff, "onAfterPlay", state, state.currentPlayerIndex, card)
+      invokeBuffHook(buff, "onAfterPlay", state, playerIndex, card)
     );
+    // 保持原有子阶段推进行为
     setSubPhase(state, "onUseCard");
     nextSubPhase(state);
   }
@@ -576,7 +588,7 @@ export const playActiveCard = (
   return {
     state: buildSituationState({
       state,
-      playerIndex: state.currentPlayerIndex,
+      playerIndex: playerIndex >= 0 ? playerIndex : state.currentPlayerIndex,
     }),
     appliedCard: card,
     messages,

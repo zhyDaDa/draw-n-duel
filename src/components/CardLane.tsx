@@ -3,16 +3,12 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 import type {
   CardInstance,
-  CardHandler,
   CardSituationState,
   InteractionRequest,
+  CardSituationFunction,
 } from "../game/types";
-import CardDisplay, {
-  describeCardEffect,
-  toneLabel as rarityLabel,
-} from "./CardDisplay";
+import CardDisplay from "./CardDisplay";
 import "./CardLane.less";
-import { playActiveCard } from "../game/engine";
 
 export type CardLaneAnimationType =
   | "draw"
@@ -47,7 +43,7 @@ interface CardLaneProps {
   interactionOwnerName?: string;
   isInteractionOwner?: boolean;
   onDeckClick?: () => void;
-  handlePlay: CardHandler<void>;
+  handlePlay: CardSituationFunction<void>;
 }
 
 type LaneSlotType = "drawn" | "stashed" | "hand";
@@ -62,7 +58,7 @@ interface LaneSlot {
 
 const renderTooltip = (
   state: CardSituationState,
-  handlePlay: CardHandler<void>
+  handlePlay: CardSituationFunction<void>
 ): ReactNode => {
   const card = state.C_current;
   if (!card) return null;
@@ -70,7 +66,7 @@ const renderTooltip = (
     <div className="card-chip__tooltip tooltip-light__panel">
       <Button
         onClick={() => {
-          typeof handlePlay === "function" && handlePlay(card);
+          typeof handlePlay === "function" && handlePlay(state);
         }}
       >
         使用
@@ -108,7 +104,7 @@ const renderDeckTooltip = (stats: CardDeckStats): ReactNode => (
 
 const renderCard = (
   state: CardSituationState,
-  handlePlay: CardHandler<void>,
+  handlePlay: CardSituationFunction<void>,
   options: { extraClass?: string } = {}
 ): ReactNode => {
   const { extraClass = "" } = options;
@@ -191,7 +187,7 @@ const CardLane: React.FC<CardLaneProps> = ({
     handSize > 0 ? (whiteSlotCount / handSize) * 100 : null;
 
   const getSlotAnimationClass = (slot: LaneSlot): string => {
-    console.log("Animating slot", slot, animationEvent);
+    // console.log("Animating slot", slot, animationEvent);
     if (!slot.state || !animationEvent) return "";
     const currentCard = slot.state.C_current;
     if (!currentCard) return "";
