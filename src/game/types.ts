@@ -387,6 +387,8 @@ export type CardSituationFunction<R = void> =
   | R
   | ((state: CardSituationState) => R);
 
+export type CardHandler<R = void> = (card: CardInstance) => R;
+
 // effect中用到的数值, 因为可能收到各种影响, 所以用一个字典来存储原本的数值和各种修改后的数值, 以及修改的来源
 export type EffectValue = {
   type: string[];

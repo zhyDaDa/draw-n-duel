@@ -37,7 +37,9 @@ import {
 } from "../game/situations";
 import {
   type ActionResult,
+  type CardHandler,
   type CardInstance,
+  type CardSituationFunction,
   type DrawResult,
   type EngineError,
   type EngineOutcome,
@@ -435,14 +437,14 @@ const GamePlayPage: React.FC = () => {
     handleOutcome(result);
   };
 
-  const handlePlay = () => {
+  const handlePlay: CardHandler<void> = (card: CardInstance) => {
     if (aiBusy || interactionLocked) return;
-    const activeCard = gameState.activeCard;
+    gameState.activeCard = card;
     const result = playActiveCard(gameState);
-    if (!isEngineError(result) && activeCard) {
+    if (!isEngineError(result) && card) {
       registerAnimation({
         type: "play",
-        cards: [activeCard],
+        cards: [gameState.activeCard],
         timestamp: Date.now(),
       });
     }
@@ -780,6 +782,9 @@ const GamePlayPage: React.FC = () => {
                 {gameState.level}
                 ｜阶段：{gameState.phase}
               </p>
+              <p>
+                目前在关注的牌：{activeCard?.C_name}#{activeCard?.instanceId}
+              </p>
             </div>
             {statusMessage ? (
               <span className="top-bar__chip top-bar__chip--status">
@@ -894,6 +899,7 @@ const GamePlayPage: React.FC = () => {
               }
               isInteractionOwner={isLocalInteractionOwner}
               onDeckClick={() => setShowDeckModal(true)}
+              handlePlay={handlePlay}
             />
           </section>
         </div>

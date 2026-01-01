@@ -1,8 +1,9 @@
-import { Flex, Tooltip } from "antd";
+import { Button, Flex, Tooltip } from "antd";
 import { useMemo } from "react";
 import type { ReactNode } from "react";
 import type {
   CardInstance,
+  CardHandler,
   CardSituationState,
   InteractionRequest,
 } from "../game/types";
@@ -11,6 +12,7 @@ import CardDisplay, {
   toneLabel as rarityLabel,
 } from "./CardDisplay";
 import "./CardLane.less";
+import { playActiveCard } from "../game/engine";
 
 export type CardLaneAnimationType =
   | "draw"
@@ -45,6 +47,7 @@ interface CardLaneProps {
   interactionOwnerName?: string;
   isInteractionOwner?: boolean;
   onDeckClick?: () => void;
+  handlePlay: CardHandler<void>;
 }
 
 type LaneSlotType = "drawn" | "stashed" | "hand";
@@ -57,25 +60,37 @@ interface LaneSlot {
   order: number;
 }
 
-const renderTooltip = (state: CardSituationState): ReactNode => {
+const renderTooltip = (
+  state: CardSituationState,
+  handlePlay: CardHandler<void>
+): ReactNode => {
   const card = state.C_current;
   if (!card) return null;
   return (
     <div className="card-chip__tooltip tooltip-light__panel">
-      <header>
-        <strong>{card.C_name}</strong>
-        <span>{rarityLabel[card.C_rarity]}</span>
-      </header>
-      <p>{describeCardEffect(state)}</p>
-      <p>{card.C_description}</p>
-      {card.C_keywords?.length ? (
-        <ul>
-          {card.C_keywords.map((keyword) => (
-            <li key={keyword}>{keyword}</li>
-          ))}
-        </ul>
-      ) : null}
+      <Button
+        onClick={() => {
+          typeof handlePlay === "function" && handlePlay(card);
+        }}
+      >
+        使用
+      </Button>
     </div>
+    // <div className="card-chip__tooltip tooltip-light__panel">
+    //   <header>
+    //     <strong>{card.C_name}</strong>
+    //     <span>{rarityLabel[card.C_rarity]}</span>
+    //   </header>
+    //   <p>{describeCardEffect(state)}</p>
+    //   <p>{card.C_description}</p>
+    //   {card.C_keywords?.length ? (
+    //     <ul>
+    //       {card.C_keywords.map((keyword) => (
+    //         <li key={keyword}>{keyword}</li>
+    //       ))}
+    //     </ul>
+    //   ) : null}
+    // </div>
   );
 };
 
@@ -93,12 +108,13 @@ const renderDeckTooltip = (stats: CardDeckStats): ReactNode => (
 
 const renderCard = (
   state: CardSituationState,
+  handlePlay: CardHandler<void>,
   options: { extraClass?: string } = {}
 ): ReactNode => {
   const { extraClass = "" } = options;
   return (
     <Tooltip
-      title={renderTooltip(state)}
+      title={renderTooltip(state, handlePlay)}
       placement="top"
       classNames={{ root: "tooltip-light" }}
     >
@@ -120,6 +136,7 @@ const CardLane: React.FC<CardLaneProps> = ({
   animationEvent,
   pendingInteraction,
   onDeckClick,
+  handlePlay,
 }) => {
   const { slots, whiteSlotCount } = useMemo(() => {
     const safeHandSize = Math.max(handSize, 0);
@@ -179,9 +196,7 @@ const CardLane: React.FC<CardLaneProps> = ({
     const currentCard = slot.state.C_current;
     if (!currentCard) return "";
     if (
-      !animationEvent.cards.some(
-        (c) => c.instanceId === currentCard.instanceId
-      )
+      !animationEvent.cards.some((c) => c.instanceId === currentCard.instanceId)
     ) {
       // 出现动画的卡牌中不包含此卡牌
       return "";
@@ -223,7 +238,7 @@ const CardLane: React.FC<CardLaneProps> = ({
 
     return (
       <div className="card-slot__card-wrapper">
-        {renderCard(slot.state, {
+        {renderCard(slot.state, handlePlay, {
           extraClass: [
             `card-slot__card--lane-${slot.type}`,
             animationClass,
@@ -245,7 +260,6 @@ const CardLane: React.FC<CardLaneProps> = ({
     <section className="card-lane" aria-label="卡牌分区">
       <div
         className="card-slot card-slot--deck"
-        role={onDeckClick ? "button" : undefined}
         tabIndex={onDeckClick ? 0 : undefined}
         onClick={onDeckClick}
         onKeyDown={(event) => {
