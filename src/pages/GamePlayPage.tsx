@@ -437,7 +437,9 @@ const GamePlayPage: React.FC = () => {
     handleOutcome(result);
   };
 
-  const handlePlay: CardSituationFunction<void> = (state: CardSituationState) => {
+  const handlePlay: CardSituationFunction<void> = (
+    state: CardSituationState
+  ) => {
     if (aiBusy || interactionLocked) return;
     const result = playActiveCard(state);
     if (!isEngineError(result) && state.C_current) {
@@ -776,9 +778,8 @@ const GamePlayPage: React.FC = () => {
               <p>
                 阶段：{gameState.phase}
                 ｜子阶段： {gameState.subPhase ?? "无"}
-              </p>
-              <p>
-                目前在关注的牌：{activeCard?.C_name}#{activeCard?.instanceId}
+                &nbsp;｜ 目前在关注的牌：{activeCard?.C_name}#
+                {activeCard?.instanceId}
               </p>
             </div>
             {statusMessage ? (

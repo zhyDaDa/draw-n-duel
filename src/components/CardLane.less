@@ -1,6 +1,8 @@
 .card-lane__hand {
   flex: 1;
   overflow-x: scroll;
+  overflow-y: visible;
+  position: relative;
   padding-bottom: 0.75rem;
 
   &::-webkit-scrollbar {
@@ -20,6 +22,9 @@
 
   .card-lane__slots {
     gap: 8px;
+    overflow: visible;
+    position: relative;
+    z-index: 1;
   }
 }
 
@@ -38,7 +43,7 @@
   gap: 1.5rem;
   align-items: stretch;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .card-slot {
