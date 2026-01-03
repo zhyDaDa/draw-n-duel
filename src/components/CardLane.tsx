@@ -65,13 +65,7 @@ const renderTooltip = (
   if (!card) return null;
   return (
     <div className="card-chip__tooltip tooltip-light__panel">
-      <Button
-        onClick={() => {
-          typeof handlePlay === "function" && handlePlay(state);
-        }}
-      >
-        使用
-      </Button>
+      单击以使用卡牌
     </div>
   );
 };
@@ -217,6 +211,59 @@ const CardLane: React.FC<CardLaneProps> = ({
       setHoverKey(null); // only clear hoverKey after exit animation finished
       exitTimerRef.current = null;
     }, 220);
+  };
+
+  const handleFloatingClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!floating) return;
+    try {
+      handlePlay(floating.state);
+    } catch (err) {
+      // ignore
+    }
+    // start exit animation then unmount
+    setFloatingActive(false);
+    if (enterTimerRef.current) {
+      window.clearTimeout(enterTimerRef.current);
+      enterTimerRef.current = null;
+    }
+    if (exitTimerRef.current) {
+      window.clearTimeout(exitTimerRef.current);
+    }
+    exitTimerRef.current = window.setTimeout(() => {
+      setFloating(null);
+      setHoverKey(null);
+      exitTimerRef.current = null;
+    }, 220);
+  };
+
+  const renderFloatingTooltipContent = (state: CardSituationState) => {
+    const card = state.C_current;
+    if (!card) return null;
+    return (
+      <div className="card-chip__tooltip tooltip-light__panel">
+        <Button
+          onClick={(ev) => {
+            ev.stopPropagation();
+            try {
+              handlePlay(state);
+            } catch (err) {}
+            // close floating
+            setFloatingActive(false);
+            if (exitTimerRef.current) {
+              window.clearTimeout(exitTimerRef.current);
+            }
+            exitTimerRef.current = window.setTimeout(() => {
+              setFloating(null);
+              setHoverKey(null);
+              exitTimerRef.current = null;
+            }, 220);
+          }}
+        >
+          使用
+        </Button>
+      </div>
+    );
   };
 
   const { slots } = useMemo(() => {
@@ -397,6 +444,27 @@ const CardLane: React.FC<CardLaneProps> = ({
         ? createPortal(
             <div
               className="card-floating"
+              role="button"
+              tabIndex={0}
+              onClick={handleFloatingClick}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                  handleFloatingClick(ev as unknown as React.MouseEvent);
+                }
+              }}
+              onMouseEnter={() => {
+                // when mouse enters floating, cancel any pending exit
+                if (exitTimerRef.current) {
+                  window.clearTimeout(exitTimerRef.current);
+                  exitTimerRef.current = null;
+                }
+                // ensure active class is present
+                setFloatingActive(true);
+              }}
+              onMouseLeave={() => {
+                // begin exit sequence when mouse leaves floating
+                handleHoverEnd();
+              }}
               style={{
                 left: floating.rect.left + window.scrollX,
                 top: floating.rect.top + window.scrollY,
@@ -404,13 +472,20 @@ const CardLane: React.FC<CardLaneProps> = ({
                 height: floating.rect.height,
               }}
             >
-              <div
-                className={`card-floating-inner ${
-                  floatingActive ? "card-floating-inner--active" : ""
-                }`}
+              <Tooltip
+                title={"单击以使用卡牌"}
+                placement="top"
               >
-                <CardDisplay state={floating.state} size="sm" />
-              </div>
+                <div
+                  className={`card-floating-inner ${
+                    floatingActive ? "card-floating-inner--active" : ""
+                  } ${
+                    floatingActive ? "card-floating-inner--interactive" : ""
+                  }`}
+                >
+                  <CardDisplay state={floating.state} size="sm" />
+                </div>
+              </Tooltip>
             </div>,
             floatRootRef.current
           )

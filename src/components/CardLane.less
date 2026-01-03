@@ -256,14 +256,14 @@
 #card-floating-root {
   position: fixed;
   inset: 0;
-  pointer-events: none; /* 浮层不拦截鼠标事件（必要时改为 auto 并处理事件） */
-  z-index: 9999;
+  pointer-events: none; /* 浮层根默认不拦截鼠标，子元素可开启 */
+  z-index: 900; /* 设为较低值，确保全局 Tooltip 能覆盖浮层 */
 }
 
 /* 单个浮动卡片的定位容器（由 portal 渲染） */
 .card-floating {
   position: absolute;
-  pointer-events: none;
+  pointer-events: auto; /* 允许在浮层上的交互 (根容器仍为 none) */
   will-change: transform, box-shadow;
   /* 保持原大小（inner 做 transform） */
 }
@@ -282,7 +282,25 @@
   box-shadow: 0 32px 72px rgba(2, 6, 23, 0.55);
 }
 
+/* interactive outline when floating is clickable */
+.card-floating-inner--interactive {
+  cursor: pointer;
+  outline: 3px solid rgba(251, 191, 36, 0.9); /* amber-400 */
+  outline-offset: 4px;
+  transition: transform 220ms cubic-bezier(.2,.9,.2,1), box-shadow 220ms, outline 180ms;
+}
+
 /* 隐藏原位置的卡片（避免视觉重叠） */
+.card-slot__card {
+  transition: opacity 220ms cubic-bezier(.2,.9,.2,1);
+}
+
 .card-slot__card-wrapper.is-hovered .card-slot__card {
-  visibility: hidden;
+  opacity: 0; /* 透明但保留事件目标，允许 Tooltip 触发 */
+}
+
+/* Tooltip should be non-interactive so clicks pass to floating card; keep it visually above floating layer */
+.tooltip-light {
+  pointer-events: auto !important; /* tooltip should accept interactions when shown in floating portal */
+  z-index: 1200;
 }
