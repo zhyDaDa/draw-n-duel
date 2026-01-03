@@ -38,6 +38,8 @@ import {
 import {
   type ActionResult,
   type CardInstance,
+  type CardSituationFunction,
+  type CardSituationState,
   type DrawResult,
   type EngineError,
   type EngineOutcome,
@@ -435,14 +437,13 @@ const GamePlayPage: React.FC = () => {
     handleOutcome(result);
   };
 
-  const handlePlay = () => {
+  const handlePlay: CardSituationFunction<void> = (state: CardSituationState) => {
     if (aiBusy || interactionLocked) return;
-    const activeCard = gameState.activeCard;
-    const result = playActiveCard(gameState);
-    if (!isEngineError(result) && activeCard) {
+    const result = playActiveCard(state);
+    if (!isEngineError(result) && state.C_current) {
       registerAnimation({
         type: "play",
-        cards: [activeCard],
+        cards: [state.C_current],
         timestamp: Date.now(),
       });
     }
@@ -710,13 +711,6 @@ const GamePlayPage: React.FC = () => {
     }
     return [
       {
-        key: "play",
-        label: "结算卡牌",
-        onClick: handlePlay,
-        disabled: playDisabled,
-        tooltip: "立即结算这张卡牌的效果。",
-      },
-      {
         key: "stash",
         label: "滞留",
         onClick: handleStash,
@@ -782,6 +776,9 @@ const GamePlayPage: React.FC = () => {
               <p>
                 阶段：{gameState.phase}
                 ｜子阶段： {gameState.subPhase ?? "无"}
+              </p>
+              <p>
+                目前在关注的牌：{activeCard?.C_name}#{activeCard?.instanceId}
               </p>
             </div>
             {statusMessage ? (
@@ -897,6 +894,7 @@ const GamePlayPage: React.FC = () => {
               }
               isInteractionOwner={isLocalInteractionOwner}
               onDeckClick={() => setShowDeckModal(true)}
+              handlePlay={handlePlay}
             />
           </section>
         </div>

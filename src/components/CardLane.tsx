@@ -1,15 +1,13 @@
-import { Flex, Tooltip } from "antd";
-import { useMemo, useRef } from "react"; // 添加 useRef
+import { Button, Flex, Tooltip } from "antd";
+import { useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import type {
   CardInstance,
   CardSituationState,
   InteractionRequest,
+  CardSituationFunction,
 } from "../game/types";
-import CardDisplay, {
-  describeCardEffect,
-  toneLabel as rarityLabel,
-} from "./CardDisplay";
+import CardDisplay from "./CardDisplay";
 import "./CardLane.less";
 
 export type CardLaneAnimationType =
@@ -45,6 +43,7 @@ interface CardLaneProps {
   interactionOwnerName?: string;
   isInteractionOwner?: boolean;
   onDeckClick?: () => void;
+  handlePlay: CardSituationFunction<void>;
 }
 
 type LaneSlotType = "drawn" | "stashed" | "hand";
@@ -57,24 +56,21 @@ interface LaneSlot {
   order: number;
 }
 
-const renderTooltip = (state: CardSituationState): ReactNode => {
+const renderTooltip = (
+  state: CardSituationState,
+  handlePlay: CardSituationFunction<void>
+): ReactNode => {
   const card = state.C_current;
   if (!card) return null;
   return (
     <div className="card-chip__tooltip tooltip-light__panel">
-      <header>
-        <strong>{card.C_name}</strong>
-        <span>{rarityLabel[card.C_rarity]}</span>
-      </header>
-      <p>{describeCardEffect(state)}</p>
-      <p>{card.C_description}</p>
-      {card.C_keywords?.length ? (
-        <ul>
-          {card.C_keywords.map((keyword) => (
-            <li key={keyword}>{keyword}</li>
-          ))}
-        </ul>
-      ) : null}
+      <Button
+        onClick={() => {
+          typeof handlePlay === "function" && handlePlay(state);
+        }}
+      >
+        使用
+      </Button>
     </div>
   );
 };
@@ -93,12 +89,13 @@ const renderDeckTooltip = (stats: CardDeckStats): ReactNode => (
 
 const renderCard = (
   state: CardSituationState,
+  handlePlay: CardSituationFunction<void>,
   options: { extraClass?: string } = {}
 ): ReactNode => {
   const { extraClass = "" } = options;
   return (
     <Tooltip
-      title={renderTooltip(state)}
+      title={renderTooltip(state, handlePlay)}
       placement="top"
       classNames={{ root: "tooltip-light" }}
     >
@@ -120,20 +117,21 @@ const CardLane: React.FC<CardLaneProps> = ({
   animationEvent,
   pendingInteraction,
   onDeckClick,
+  handlePlay,
 }) => {
-  const handRef = useRef<HTMLDivElement>(null); // 添加 ref
+  const handRef = useRef<HTMLDivElement>(null);
 
-  // 添加滚轮处理函数
   const onWheel = (e: React.WheelEvent) => {
     const el = handRef.current;
     if (!el) return;
     const canScrollH = el.scrollWidth > el.clientWidth + 1;
     if (!canScrollH) return; // 无需横向滚动
 
-    // 若有水平滚动量直接使用，否则将垂直转为水平滚动
+    // 若有水平滚动量直接使用，否则将垂直转为横向滚动
     const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
     if (Math.abs(delta) > 0) {
       e.preventDefault();
+      // 轻微缓冲，避免滚动过快
       el.scrollLeft += delta / 5;
     }
   };
@@ -189,14 +187,12 @@ const CardLane: React.FC<CardLaneProps> = ({
   const activeCard = activeCardState?.C_current;
 
   const getSlotAnimationClass = (slot: LaneSlot): string => {
-    console.log("Animating slot", slot, animationEvent);
     if (!slot.state || !animationEvent) return "";
     const currentCard = slot.state.C_current;
     if (!currentCard) return "";
     if (
       !animationEvent.cards.some((c) => c.instanceId === currentCard.instanceId)
     ) {
-      // 出现动画的卡牌中不包含此卡牌
       return "";
     }
     switch (animationEvent.type) {
@@ -236,7 +232,7 @@ const CardLane: React.FC<CardLaneProps> = ({
 
     return (
       <div className="card-slot__card-wrapper">
-        {renderCard(slot.state, {
+        {renderCard(slot.state, handlePlay, {
           extraClass: [
             `card-slot__card--lane-${slot.type}`,
             animationClass,
@@ -258,7 +254,6 @@ const CardLane: React.FC<CardLaneProps> = ({
     <section className="card-lane" aria-label="卡牌分区">
       <div
         className="card-slot card-slot--deck"
-        role={onDeckClick ? "button" : undefined}
         tabIndex={onDeckClick ? 0 : undefined}
         onClick={onDeckClick}
         onKeyDown={(event) => {
@@ -282,10 +277,10 @@ const CardLane: React.FC<CardLaneProps> = ({
       </div>
 
       <Flex
-        ref={handRef} // 添加 ref
+        ref={handRef}
         className="card-lane__hand"
         aria-label="卡槽区"
-        onWheel={onWheel} // 添加滚轮事件
+        onWheel={onWheel}
       >
         <Flex className="card-lane__slots">
           {slots.length === 0 ? (
