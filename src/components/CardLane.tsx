@@ -1,5 +1,6 @@
 import { Button, Flex, Tooltip } from "antd";
-import { useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
+import { useMemo, useRef, useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import type {
   CardInstance,
@@ -121,6 +122,43 @@ const CardLane: React.FC<CardLaneProps> = ({
 }) => {
   const handRef = useRef<HTMLDivElement>(null);
 
+  // 新增：浮层状态
+  type FloatingState = {
+    state: CardSituationState;
+    rect: DOMRect;
+    key: string;
+  };
+  const [floating, setFloating] = useState<FloatingState | null>(null);
+  const [floatingActive, setFloatingActive] = useState(false);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const floatRootRef = useRef<HTMLElement | null>(null);
+  const enterTimerRef = useRef<number | null>(null);
+  const exitTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let root = document.getElementById(
+      "card-floating-root"
+    ) as HTMLElement | null;
+    if (!root) {
+      root = document.createElement("div");
+      root.id = "card-floating-root";
+      document.body.appendChild(root);
+    }
+    floatRootRef.current = root;
+    return () => {
+      // 清理定时器
+      if (enterTimerRef.current) {
+        window.clearTimeout(enterTimerRef.current);
+        enterTimerRef.current = null;
+      }
+      if (exitTimerRef.current) {
+        window.clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+      // 不删除 root，避免多次创建；若需要清理可在这里处理
+    };
+  }, []);
+
   const onWheel = (e: React.WheelEvent) => {
     const el = handRef.current;
     if (!el) return;
@@ -134,6 +172,51 @@ const CardLane: React.FC<CardLaneProps> = ({
       // 轻微缓冲，避免滚动过快
       el.scrollLeft += delta / 5;
     }
+  };
+
+  // 悬停开始/结束：把卡片 DOM 的 bounding rect 记录下来并 portal 渲染
+  const handleHoverStart = (
+    slotState: CardSituationState,
+    key: string,
+    e: React.MouseEvent
+  ) => {
+    const wrapper = e.currentTarget as HTMLElement;
+    const cardEl = wrapper.querySelector(
+      ".card-slot__card"
+    ) as HTMLElement | null;
+    if (!cardEl) return;
+    const rect = cardEl.getBoundingClientRect();
+    // clear any pending exit
+    if (exitTimerRef.current) {
+      window.clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+    setHoverKey(key);
+    setFloating({ state: slotState, rect, key });
+    // small timeout to allow initial render then activate for transition
+    if (enterTimerRef.current) {
+      window.clearTimeout(enterTimerRef.current);
+    }
+    enterTimerRef.current = window.setTimeout(() => {
+      setFloatingActive(true);
+      enterTimerRef.current = null;
+    }, 20);
+  };
+  const handleHoverEnd = () => {
+    // deactivate (triggers CSS exit transition), then remove DOM after transition
+    setFloatingActive(false);
+    if (enterTimerRef.current) {
+      window.clearTimeout(enterTimerRef.current);
+      enterTimerRef.current = null;
+    }
+    if (exitTimerRef.current) {
+      window.clearTimeout(exitTimerRef.current);
+    }
+    exitTimerRef.current = window.setTimeout(() => {
+      setFloating(null);
+      setHoverKey(null); // only clear hoverKey after exit animation finished
+      exitTimerRef.current = null;
+    }, 220);
   };
 
   const { slots } = useMemo(() => {
@@ -231,7 +314,15 @@ const CardLane: React.FC<CardLaneProps> = ({
       slot.state.C_current.instanceId === activeCard.instanceId;
 
     return (
-      <div className="card-slot__card-wrapper">
+      <div
+        className={`card-slot__card-wrapper ${
+          hoverKey === slot.key ? "is-hovered" : ""
+        }`}
+        onMouseEnter={(e) =>
+          slot.state && handleHoverStart(slot.state, slot.key, e)
+        }
+        onMouseLeave={handleHoverEnd}
+      >
         {renderCard(slot.state, handlePlay, {
           extraClass: [
             `card-slot__card--lane-${slot.type}`,
@@ -300,6 +391,30 @@ const CardLane: React.FC<CardLaneProps> = ({
           )}
         </Flex>
       </Flex>
+
+      {/* Portal 渲染浮层卡片 */}
+      {floating && floatRootRef.current
+        ? createPortal(
+            <div
+              className="card-floating"
+              style={{
+                left: floating.rect.left + window.scrollX,
+                top: floating.rect.top + window.scrollY,
+                width: floating.rect.width,
+                height: floating.rect.height,
+              }}
+            >
+              <div
+                className={`card-floating-inner ${
+                  floatingActive ? "card-floating-inner--active" : ""
+                }`}
+              >
+                <CardDisplay state={floating.state} size="sm" />
+              </div>
+            </div>,
+            floatRootRef.current
+          )
+        : null}
     </section>
   );
 };
