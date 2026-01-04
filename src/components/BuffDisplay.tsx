@@ -10,7 +10,7 @@ export const BuffDisplay: React.FC<BuffDisplayProps> = ({ buff }) => {
   const tooltipContent = (
     <div className="buff-tooltip">
       <header>
-        <strong>{buff.name}</strong>
+        <strong>{buff.name()}</strong>
         {!buff.isPermanent && <span className="buff-tooltip__temp">临时</span>}
       </header>
       <p>{buff.description}</p>

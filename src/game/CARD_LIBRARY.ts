@@ -1,71 +1,26 @@
-import { randomInt } from "../utils";
-import { createCard, type CardEffect, type TargetType } from "./types";
+import type { CardDefinition } from "./types"; // 假设 Card 类型定义在这里
 
-const DEFAULT_LEVEL_RANGE: [number, number] = [1, 5];
+// =================================================================
+// 自动注册逻辑
+// =================================================================
 
-export const CARD_LIBRARY = [
-  createCard({
-    C_id: "basic-add",
-    C_name: "基础加分",
-    C_rarity: 1 as const,
-    C_baseWeight: 10,
-    C_levelRange: DEFAULT_LEVEL_RANGE,
-    C_effect: {
-      type: "math",
-      target: "self" as TargetType,
-      valueDict: {
-        score: {
-          type: ["score", "math", "add"],
-          base: 5,
-        },
-      },
-      notes: (state) => {
-        const score = state.C_current.C_effect.valueDict.score;
-        return `+ ${score.modified ?? score.base} 分`;
-      },
-      onCreate: (state) => {
-        // 直接修改传入的卡牌引用
-        const delta = (state.G_state.level + 1) ** 2;
-        const score = delta + 1 + randomInt(-delta, delta);
-        state.card.C_effect.valueDict.score.base = score;
-      },
-      onPlay(state) {
-        const score = state.C_current.C_effect.valueDict.score;
-        state.P_state.score += score.modified ?? score.base;
-      },
-    } as CardEffect,
-  }),
-  createCard({
-    C_id: "basic-multiply",
-    C_name: "基础乘法",
-    C_rarity: 1 as const,
-    C_baseWeight: 4,
-    C_levelRange: DEFAULT_LEVEL_RANGE,
-    C_effect: {
-      type: "math",
-      target: "self" as TargetType,
-      valueDict: {
-        score: {
-          type: ["score", "math", "multiply"],
-          base: 2,
-        },
-      },
-      notes: (state) => {
-        const score = state.C_current.C_effect.valueDict.score;
-        return `x ${score.base}${
-          score.modified !== undefined ? ` (modified: ${score.modified})` : ""
-        } 分`;
-      },
-      onCreate: (state) => {
-        // 直接修改传入的卡牌引用
-        const delta = (state.G_state.level + 1) * 2;
-        const score = delta * 0.5 + 1 + randomInt(-delta, delta) * 0.5;
-        state.card.C_effect.valueDict.score.base = score;
-      },
-      onPlay(state) {
-        const score = state.C_current.C_effect.valueDict.score;
-        state.P_state.score *= score.modified ?? score.base;
-      },
-    } as CardEffect,
-  }),
-];
+// 1. 使用 Vite 的 import.meta.glob 抓取 ./cards 目录下所有 .ts 文件
+// eager: true 表示直接打包编译，而不是懒加载（因为我们需要构建初始牌库）
+const modules = import.meta.glob("./cards/*.ts", { eager: true });
+
+// 2. 遍历所有模块，提取导出的卡牌对象
+export const CARD_LIBRARY: CardDefinition[] = Object.values(modules).map(
+  (mod: any) => {
+    // 因为我们在卡牌文件中使用的是 export const Name = ... (命名导出)
+    // 所以我们需要取出模块中的第一个导出对象
+    // 如果你以后改用 export default，这里就改成 return mod.default;
+    const exportedKeys = Object.keys(mod);
+    if (exportedKeys.length === 0) {
+      throw new Error(`卡牌文件未导出任何内容`);
+    }
+    // 默认取第一个导出项作为卡牌对象
+    return mod[exportedKeys[0]] as CardDefinition;
+  }
+);
+
+console.log(`[System] 已自动加载 ${CARD_LIBRARY.length} 张卡牌`);

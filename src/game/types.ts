@@ -626,8 +626,8 @@ export type PlayerBuffCategory =
 
 export interface PlayerBuff {
   id: number;
-  name: string | SituationFunction<string>;
-  description: string | SituationFunction<string>;
+  name: SituationFunction<string>;
+  description: SituationFunction<string>;
   icon: string;
   isPermanent: boolean;
   duration?: number;
