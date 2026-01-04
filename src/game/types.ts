@@ -382,10 +382,8 @@ export const cloneSituationState = (state: SituationState): SituationState => {
   } else return state.clone();
 };
 
-export type SituationFunction<R = void> = R | ((state: SituationState) => R);
-export type CardSituationFunction<R = void> =
-  | R
-  | ((state: CardSituationState) => R);
+export type SituationFunction<R = void> = (state: SituationState) => R;
+export type CardSituationFunction<R = void> = (state: CardSituationState) => R;
 
 export type CardHandler<R = void> = (card: CardInstance) => R;
 
@@ -467,13 +465,13 @@ export class CardDefinition {
 
   // 获取在特定情形下的名称文本（如果是函数则执行）
   getName(state?: SituationState): string {
-    return this.resolve(this.C_name, state);
+    return this.resolve(() => this.C_name, state);
   }
 
   // 获取在特定情形下的描述文本（如果是函数则执行）
   getDescription(state?: SituationState): string {
     if (!this.C_description) return "";
-    return this.resolve(this.C_description, state);
+    return this.resolve(() => this.C_description, state) || "无描述";
   }
 
   // 快速创建一个 CardInstance（会把定义 id 写入 definitionId，并分配 instanceId）

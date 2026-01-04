@@ -472,10 +472,7 @@ const CardLane: React.FC<CardLaneProps> = ({
                 height: floating.rect.height,
               }}
             >
-              <Tooltip
-                title={"单击以使用卡牌"}
-                placement="top"
-              >
+              <Tooltip title={"单击以使用卡牌"} placement="top">
                 <div
                   className={`card-floating-inner ${
                     floatingActive ? "card-floating-inner--active" : ""
