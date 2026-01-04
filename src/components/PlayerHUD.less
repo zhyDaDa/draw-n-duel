@@ -1,0 +1,115 @@
+.player-hud {
+  // width: 16rem;
+  height: 100%;
+  border: 1px solid #e0e7ff;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #ffffff;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  min-width: 0;
+  will-change: transform, box-shadow;
+  transform: scale(0.8);
+  transition: all 0.8s;
+
+  &--active {
+    border-color: #6366f1;
+    box-shadow: 0 10px 24px rgba(99, 102, 241, 0.18);
+    transform: scale(1);
+    animation: glow 2.4s ease infinite;
+  }
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  &__badge {
+    font-size: 0.85rem;
+    padding: 0.3rem 0.6rem;
+    background: #6366f1;
+    color: #fff;
+    border-radius: 999px;
+    // animation: glow 1.8s ease-in infinite;
+  }
+  &__stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 1rem;
+    margin-bottom: 0.75rem;
+  }
+  &__buffs {
+    margin-bottom: 0.75rem;
+    min-height: 60px;
+  }
+  &__buffs h3,
+  &__backpack h3 {
+    font-size: 0.9rem;
+    margin: 0 0 0.5rem;
+    color: #4b5563;
+  }
+  &__backpack ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 1rem;
+  }
+}
+
+.player-hud__current-overlay {
+  position: absolute;
+  pointer-events: none;
+  z-index: 9999;
+  border-radius: 10px;
+  transform-origin: center center;
+  display: block;
+  /* ensure it sits above other UI */
+  will-change: transform, box-shadow, outline;
+  animation: playerCurrentPulse 900ms cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+}
+
+@keyframes playerCurrentPulse {
+  0% {
+    transform: scale(1) translateY(0);
+    box-shadow: 0 0 0 rgba(0, 0, 0, 0.18);
+    outline: none;
+  }
+  30% {
+    transform: scale(1.08) translateY(-10px);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.14);
+  }
+  65% {
+    transform: scale(1.03) translateY(-6px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    outline: 4px solid rgba(255, 200, 0, 0.45);
+    outline-offset: 6px;
+  }
+}
+
+// /* Optional small fade-out class if needed */
+// .player-hud__current-overlay--fadeout {
+//   transition: opacity 260ms ease;
+//   opacity: 0;
+// }
+
+// /* Basic PlayerHUD layout tweaks (non-invasive) */
+// .player-hud {
+//   position: relative;
+// }
+
+// .player-hud__header h2 {
+//   margin: 0 0 6px 0;
+// }
+
+// .player-hud__badge {
+//   background: linear-gradient(90deg, #ffd95a, #ffb84d);
+//   color: #222;
+//   padding: 2px 8px;
+//   border-radius: 10px;
+//   font-size: 12px;
+//   margin-left: 8px;
+// }

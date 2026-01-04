@@ -5,7 +5,7 @@ import { DEFAULT_LEVEL_RANGE } from "../constants.ts";
 export const BasicAdd = createCard({
   C_id: "basic-add",
   C_name: "基础加分",
-  C_rarity: 1 as const,
+  C_rarity: "common" as const,
   C_baseWeight: 10,
   C_levelRange: DEFAULT_LEVEL_RANGE,
   C_effect: {

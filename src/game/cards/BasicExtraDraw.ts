@@ -11,7 +11,7 @@ import { DEFAULT_LEVEL_RANGE } from "../constants";
 export const BasicExtraDraw = createCard({
   C_id: "basicextradraw",
   C_name: "额外抽卡",
-  C_rarity: 1 as Rarity,
+  C_rarity: "uncommon" as Rarity,
   C_baseWeight: 2, // 加法的权重是10
   C_levelRange: DEFAULT_LEVEL_RANGE,
   C_effect: {

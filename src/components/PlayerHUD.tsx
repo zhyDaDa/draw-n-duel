@@ -1,6 +1,6 @@
 import AnimatedBuffList from "./AnimatedBuffList";
 import { type GameState, type PlayerBuff } from "../game/types";
-import "../components/BuffDisplay.css";
+import "./PlayerHUD.less";
 
 interface PlayerHUDProps {
   gameState: GameState;
@@ -69,7 +69,8 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
     buffs.push({
       id: makeBuffId(),
       name: () => `第${token.level}层通行证`,
-      description: () => `在第${token.level}层结算时，分数保底为 ${token.threshold} 分。`,
+      description: () =>
+        `在第${token.level}层结算时，分数保底为 ${token.threshold} 分。`,
       category: ["token", "permanent"],
       icon: "/src/assets/svg/皇冠_crown-two.svg",
       isPermanent: true,
@@ -82,7 +83,8 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
     buffs.push({
       id: makeBuffId(),
       name: () => "商人代币",
-      description: () => `拥有 ${player.merchantTokens} 枚商人代币，可在旅行商人处使用。`,
+      description: () =>
+        `拥有 ${player.merchantTokens} 枚商人代币，可在旅行商人处使用。`,
       category: ["token", "permanent"],
       icon: "/src/assets/svg/钻石_diamonds.svg",
       isPermanent: true,

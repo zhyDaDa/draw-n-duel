@@ -5,7 +5,7 @@ import { DEFAULT_LEVEL_RANGE } from "../constants.ts";
 export const BasicMultiply = createCard({
   C_id: "basic-multiply",
   C_name: "基础乘法",
-  C_rarity: 1 as const,
+  C_rarity: "common" as const,
   C_baseWeight: 4,
   C_levelRange: DEFAULT_LEVEL_RANGE,
   C_effect: {

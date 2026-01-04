@@ -57,6 +57,7 @@ export const CardDisplay: React.FC<CardDisplayProps> = ({
     "card-display",
     `card-display--${variant}`,
     `card-display--${size}`,
+    `card-display--rarity-${resolvedTone}`,
     highlight ? "card-display--highlight" : "",
   ].filter(Boolean);
 

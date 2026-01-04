@@ -1,4 +1,4 @@
-import { Tooltip } from 'antd'
+import { Tag, Tooltip } from 'antd'
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { MERCHANT_EXCLUSIVE } from '../game/cards'
@@ -35,6 +35,20 @@ const rarityLabels: Record<CardDefinition['C_rarity'], string> = {
   mythic: '神话',
 }
 
+const rarityColorMap: Record<string, string> = {
+  // numeric tiers map to neutral / slate
+  '1': '#475569',
+  '2': '#475569',
+  '3': '#475569',
+  '4': '#475569',
+  '5': '#475569',
+  common: '#6b7280',
+  uncommon: '#047857',
+  rare: '#4338ca',
+  legendary: '#f59e0b',
+  mythic: '#8b5cf6',
+}
+
 const renderCardBadge = (name: string, uniqueKey: string): ReactNode => {
   const definition = cardLookupByName.get(name)
   if (!definition) return name
@@ -49,9 +63,12 @@ const renderCardBadge = (name: string, uniqueKey: string): ReactNode => {
     </div>
   )
 
+  const colorKey = typeof definition.C_rarity === 'number' ? String(definition.C_rarity) : definition.C_rarity
+  const tagColor = rarityColorMap[String(colorKey)]
+
   return (
     <Tooltip key={uniqueKey} title={tooltipContent} placement="top" overlayClassName="tooltip-light">
-      <span className="turn-log__card-ref">{definition.C_name}</span>
+      <Tag className="turn-log__card-ref" bordered color={tagColor ?? undefined}>{definition.C_name}</Tag>
     </Tooltip>
   )
 }

@@ -20,11 +20,6 @@ export type EffectType =
 export type TargetType = "self" | "opponent" | "both";
 
 export type Rarity =
-  | 1
-  | 2
-  | 3
-  | 4
-  | 5
   | "common"
   | "uncommon"
   | "rare"

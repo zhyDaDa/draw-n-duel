@@ -531,7 +531,7 @@ export const drawCards = (
     );
   invokeCardHook(cards[0], "onDraw", state.G_state, playerIndex);
 
-  const log = `${player.logPrefix} 抽取了 ${cards[0].C_name}。`;
+  const log = `${player.logPrefix} 抽取了 ${cards.length} 张卡牌。`;
   appendLog(state.G_state, log);
   setSubPhase(state.G_state, "waitingDrawChoice");
 
@@ -770,11 +770,7 @@ export const discardActiveCard = (
 export const releaseHoldCard = (
   sourceSituation: SituationState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(
-    sourceSituation,
-    "playerTurn",
-    "checkCanDraw"
-  );
+  const validation = ensurePhase(sourceSituation, "playerTurn", "checkCanDraw");
   if (validation) return validation;
   const sourceState = sourceSituation.G_state;
   const player = sourceState.players[sourceState.currentPlayerIndex];
@@ -841,11 +837,7 @@ export const releaseHoldCard = (
 export const discardHoldCard = (
   sourceSituation: SituationState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(
-    sourceSituation,
-    "playerTurn",
-    "checkCanDraw"
-  );
+  const validation = ensurePhase(sourceSituation, "playerTurn", "checkCanDraw");
   if (validation) return validation;
   const sourceState = sourceSituation.G_state;
   const player = sourceState.players[sourceState.currentPlayerIndex];

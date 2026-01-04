@@ -1,6 +1,5 @@
 /* Gameplay-specific styles moved from App.css
    Organized with Less nesting for clarity. 仅用于 GamePlayPage.tsx */
-
 #app-root {
   width: min(1200px, 100vw);
   margin: 0 auto;
@@ -109,58 +108,6 @@
     & .ant-space-item {
       flex: 1;
       height: 100%;
-    }
-
-    .player-hud {
-      // width: 16rem;
-      height: 100%;
-      border: 1px solid #e0e7ff;
-      border-radius: 12px;
-      padding: 1rem;
-      background: #ffffff;
-      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
-      min-width: 0;
-
-      &--active {
-        border-color: #6366f1;
-        box-shadow: 0 10px 24px rgba(99, 102, 241, 0.18);
-      }
-
-      &__header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      &__badge {
-        font-size: 0.85rem;
-        padding: 0.3rem 0.6rem;
-        background: #6366f1;
-        color: #fff;
-        border-radius: 999px;
-      }
-      &__stats {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.5rem 1rem;
-        margin-bottom: 0.75rem;
-      }
-      &__buffs {
-        margin-bottom: 0.75rem;
-        min-height: 60px;
-      }
-      &__buffs h3,
-      &__backpack h3 {
-        font-size: 0.9rem;
-        margin: 0 0 0.5rem;
-        color: #4b5563;
-      }
-      &__backpack ul {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: grid;
-        gap: 1rem;
-      }
     }
   }
 
@@ -434,7 +381,7 @@
         flex-direction: column;
         gap: 0.5rem;
         font-size: smaller;
-        button{
+        button {
           padding: 0.25rem 0.5rem;
         }
       }
@@ -448,6 +395,18 @@
     }
     100% {
       background: #eef2ff;
+    }
+  }
+
+  @keyframes glow {
+    0% {
+      box-shadow: 0 0 0 rgba(99, 102, 241, 0);
+    }
+    50% {
+      box-shadow: 0 0 0 8px rgba(99, 102, 241, 0.25);
+    }
+    100% {
+      box-shadow: 0 0 0 rgba(99, 102, 241, 0);
     }
   }
 }

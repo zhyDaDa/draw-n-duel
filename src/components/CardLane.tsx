@@ -116,7 +116,6 @@ const CardLane: React.FC<CardLaneProps> = ({
 }) => {
   const handRef = useRef<HTMLDivElement>(null);
 
-  // 新增：浮层状态
   type FloatingState = {
     state: CardSituationState;
     rect: DOMRect;
