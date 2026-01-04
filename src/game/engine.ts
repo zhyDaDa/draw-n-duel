@@ -306,10 +306,11 @@ export function allPlayersCannotDraw(state: GameState): boolean {
 }
 
 export const ensurePhase = (
-  state: GameState,
+  situation: SituationState,
   expected: GameState["phase"],
   expectedSubPhase?: NonNullable<GameState["subPhase"]>
 ): EngineOutcome<void> => {
+  const state = situation.G_state;
   if (state.phase !== expected) {
     return {
       type: "invalidPhase",
@@ -393,6 +394,14 @@ export const initializeGameState = (
   return initial;
 };
 
+export const initializeSituationState = (
+  seed?: number,
+  playerLabels: string[] = [PLAYER_LABEL, AI_LABEL]
+): SituationState => {
+  const gameState = initializeGameState(seed, playerLabels);
+  return buildSituationState({ state: gameState, playerIndex: 0 });
+};
+
 export function nextSubPhase(state: GameState): void {
   if (state.phase !== "playerTurn") return;
   const player = state.players[state.currentPlayerIndex];
@@ -474,7 +483,7 @@ export const drawCards = (
   sourceState: SituationState
 ): EngineOutcome<DrawResult> => {
   const validation = ensurePhase(
-    sourceState.G_state,
+    sourceState,
     "playerTurn",
     "prepareDrawingCard"
   );
@@ -534,7 +543,7 @@ export const playActiveCard = (
 ): EngineOutcome<ActionResult> => {
   // 验证阶段
   const validation = ensurePhase(
-    sourceState.G_state,
+    sourceState,
     "playerTurn",
     "waitingDrawChoice"
   );
@@ -596,9 +605,10 @@ export const playActiveCard = (
 };
 
 export const resolveInteractionOption = (
-  sourceState: GameState,
+  sourceSituation: SituationState,
   optionId: string
 ): EngineOutcome<ActionResult> => {
+  const sourceState = sourceSituation.G_state;
   if (!sourceState.pendingInteraction) {
     return {
       type: "invalidPhase",
@@ -648,14 +658,15 @@ export const resolveInteractionOption = (
 };
 
 export const stashActiveCard = (
-  sourceState: GameState
+  sourceSituation: SituationState
 ): EngineOutcome<ActionResult> => {
   const validation = ensurePhase(
-    sourceState,
+    sourceSituation,
     "playerTurn",
     "waitingDrawChoice"
   );
   if (validation) return validation;
+  const sourceState = sourceSituation.G_state;
   if (!sourceState.activeCard) {
     return {
       type: "invalidPhase",
@@ -712,14 +723,15 @@ export const stashActiveCard = (
 };
 
 export const discardActiveCard = (
-  sourceState: GameState
+  sourceSituation: SituationState
 ): EngineOutcome<ActionResult> => {
   const validation = ensurePhase(
-    sourceState,
+    sourceSituation,
     "playerTurn",
     "waitingDrawChoice"
   );
   if (validation) return validation;
+  const sourceState = sourceSituation.G_state;
   if (!sourceState.activeCard) {
     return {
       type: "invalidPhase",
@@ -756,10 +768,15 @@ export const discardActiveCard = (
 };
 
 export const releaseHoldCard = (
-  sourceState: GameState
+  sourceSituation: SituationState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn", "checkCanDraw");
+  const validation = ensurePhase(
+    sourceSituation,
+    "playerTurn",
+    "checkCanDraw"
+  );
   if (validation) return validation;
+  const sourceState = sourceSituation.G_state;
   const player = sourceState.players[sourceState.currentPlayerIndex];
   if (player.handCards.length === 0) {
     return {
@@ -822,10 +839,15 @@ export const releaseHoldCard = (
 };
 
 export const discardHoldCard = (
-  sourceState: GameState
+  sourceSituation: SituationState
 ): EngineOutcome<ActionResult> => {
-  const validation = ensurePhase(sourceState, "playerTurn", "checkCanDraw");
+  const validation = ensurePhase(
+    sourceSituation,
+    "playerTurn",
+    "checkCanDraw"
+  );
   if (validation) return validation;
+  const sourceState = sourceSituation.G_state;
   const player = sourceState.players[sourceState.currentPlayerIndex];
   if (player.handCards.length === 0) {
     return {
@@ -853,41 +875,62 @@ export const discardHoldCard = (
   };
 };
 
-export const finishPlayerTurn = (sourceState: GameState): GameState => {
+export const finishPlayerTurn = (
+  sourceSituation: SituationState
+): SituationState => {
+  const sourceState = sourceSituation.G_state;
   if (sourceState.phase !== "playerTurn") {
-    return sourceState;
+    return sourceSituation;
   }
   if (sourceState.pendingInteraction) {
     appendLog(sourceState, "当前有待处理的选择，无法结束回合。");
-    return sourceState;
+    return sourceSituation;
   }
   if (sourceState.activeCard) {
     appendLog(sourceState, "请先处理当前抽到的卡牌。");
-    return sourceState;
+    return sourceSituation;
   }
 
   const state = cloneState(sourceState);
   setSubPhase(state, "turnEnd");
   nextSubPhase(state);
-  return state;
+  return buildSituationState({
+    state,
+    playerIndex: state.currentPlayerIndex,
+  });
 };
 
-export const advanceSubPhase = (sourceState: GameState): GameState => {
-  const state = cloneState(sourceState);
+export const advanceSubPhase = (
+  sourceSituation: SituationState
+): SituationState => {
+  const state = cloneState(sourceSituation.G_state);
   nextSubPhase(state);
-  return state;
+  return buildSituationState({
+    state,
+    playerIndex: state.currentPlayerIndex,
+  });
 };
 
-export const beginNextPlayerTurn = (sourceState: GameState): GameState => {
-  const state = cloneState(sourceState);
-  if (state.phase !== "playerTurn") return state;
+export const beginNextPlayerTurn = (
+  sourceSituation: SituationState
+): SituationState => {
+  const state = cloneState(sourceSituation.G_state);
+  if (state.phase !== "playerTurn") {
+    return buildSituationState({
+      state,
+      playerIndex: state.currentPlayerIndex,
+    });
+  }
   if (state.subPhase === undefined) {
     nextSubPhase(state);
   }
   if (state.subPhase === "turnStart") {
     nextSubPhase(state);
   }
-  return state;
+  return buildSituationState({
+    state,
+    playerIndex: state.currentPlayerIndex,
+  });
 };
 
 const resolvePassTokens = (state: GameState, actor: PlayerState): string[] => {
@@ -995,18 +1038,25 @@ const handleInterLevelTransition = (state: GameState): void => {
   prepareNextLevel(state);
 };
 
-export const skipMerchant = (sourceState: GameState): GameState => {
-  if (sourceState.phase !== "merchant") return sourceState;
+export const skipMerchant = (
+  sourceSituation: SituationState
+): SituationState => {
+  const sourceState = sourceSituation.G_state;
+  if (sourceState.phase !== "merchant") return sourceSituation;
   const state = cloneState(sourceState);
   appendLog(state, "层间事件暂未开放，自动跳过。");
   handleInterLevelTransition(state);
-  return state;
+  return buildSituationState({
+    state,
+    playerIndex: state.currentPlayerIndex,
+  });
 };
 
 export const acceptMerchantOffer = (
-  sourceState: GameState,
+  sourceSituation: SituationState,
   _index: number
-): EngineOutcome<GameState> => {
+): EngineOutcome<SituationState> => {
+  const sourceState = sourceSituation.G_state;
   if (sourceState.phase !== "merchant") {
     return {
       type: "merchantUnavailable",
@@ -1016,7 +1066,10 @@ export const acceptMerchantOffer = (
   const state = cloneState(sourceState);
   appendLog(state, "层间事件内容暂未实现，自动继续前进。");
   handleInterLevelTransition(state);
-  return state;
+  return buildSituationState({
+    state,
+    playerIndex: state.currentPlayerIndex,
+  });
 };
 
 export function nextLevelPhase(state: GameState): void {
@@ -1048,18 +1101,28 @@ export function nextLevelPhase(state: GameState): void {
   }
 }
 
-export const advanceLevelPhase = (sourceState: GameState): GameState => {
-  const state = cloneState(sourceState);
+export const advanceLevelPhase = (
+  sourceSituation: SituationState
+): SituationState => {
+  const state = cloneState(sourceSituation.G_state);
   nextLevelPhase(state);
-  return state;
+  return buildSituationState({
+    state,
+    playerIndex: state.currentPlayerIndex,
+  });
 };
 
-export const finishLevel = (sourceState: GameState): GameState => {
-  const state = cloneState(sourceState);
+export const finishLevel = (
+  sourceSituation: SituationState
+): SituationState => {
+  const state = cloneState(sourceSituation.G_state);
   if (state.phase === "finishRound" || state.phase === "finishLevel") {
     nextLevelPhase(state);
   }
-  return state;
+  return buildSituationState({
+    state,
+    playerIndex: state.currentPlayerIndex,
+  });
 };
 
 export function getAiTurnSteps(): GameState[] {

@@ -63,6 +63,10 @@ export class SituationState {
     return this._gameState;
   }
 
+  set G_state(newState: GameState) {
+    this._gameState = newState;
+  }
+
   /** 获取当前行动玩家 */
   get P_state(): PlayerState {
     return this._gameState.players[this._currentPlayerIndex];
@@ -305,8 +309,8 @@ const clonePlayerBuff = (buff: PlayerBuff): PlayerBuff => ({
     ? Array.isArray(buff.category)
       ? [...buff.category]
       : buff.category
-    : undefined,
-  valueDict: buff.valueDict ? { ...buff.valueDict } : undefined,
+    : [],
+  valueDict: buff.valueDict ? { ...buff.valueDict } : {},
 });
 
 /**
@@ -621,7 +625,12 @@ export type GamePhase =
 export type PlayerBuffCategory =
   | "buff"
   | "debuff"
+  | "shield"
+  | "extraDraw"
+  | "temporary"
+  | "permanent"
   | "collection"
+  | "token"
   | "statusChange";
 
 export interface PlayerBuff {
@@ -632,7 +641,7 @@ export interface PlayerBuff {
   isPermanent: boolean;
   duration?: number;
   count?: number;
-  category?: PlayerBuffCategory | PlayerBuffCategory[];
+  category: PlayerBuffCategory[];
   valueDict?: Record<string, number>;
   maxStacks?: number;
   onTurnStart?: SituationFunction<void>;

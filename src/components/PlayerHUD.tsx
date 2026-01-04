@@ -1,8 +1,5 @@
 import AnimatedBuffList from "./AnimatedBuffList";
-import {
-  type GameState,
-  type PlayerBuff,
-} from "../game/types";
+import { type GameState, type PlayerBuff } from "../game/types";
 import "../components/BuffDisplay.css";
 
 interface PlayerHUDProps {
@@ -30,8 +27,10 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
       if (cnt <= 0) return;
       buffs.push({
         id: makeBuffId(),
-        name: `${color} 碎片`,
-        description: `已收集 ${cnt} 枚 ${color} 碎片。收集 ${3} 枚相同颜色碎片即可直接获胜！`,
+        name: () => `${color} 碎片`,
+        description: () =>
+          `已收集 ${cnt} 枚 ${color} 碎片。收集 ${3} 枚相同颜色碎片即可直接获胜！`,
+        category: ["collection"],
         icon: "/src/assets/svg/拼图_puzzle.svg",
         isPermanent: true,
         count: cnt,
@@ -43,8 +42,9 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
   if (player.shields > 0) {
     buffs.push({
       id: makeBuffId(),
-      name: "防御盾",
-      description: `拥有 ${player.shields} 层防御盾，可以抵挡负面效果。`,
+      name: () => "防御盾",
+      description: () => `拥有 ${player.shields} 层防御盾，可以抵挡负面效果。`,
+      category: ["shield", "permanent"],
       icon: "/src/assets/svg/安全增加_shield-add.svg",
       isPermanent: true,
       count: player.shields,
@@ -55,8 +55,9 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
   if (player.extraDraws > 0) {
     buffs.push({
       id: makeBuffId(),
-      name: "额外抽卡",
-      description: `本回合可额外抽取 ${player.extraDraws} 张卡牌。`,
+      name: () => "额外抽卡",
+      description: () => `本回合可额外抽取 ${player.extraDraws} 张卡牌。`,
+      category: ["extraDraw", "temporary"],
       icon: "/src/assets/svg/加_plus.svg",
       isPermanent: false,
       count: player.extraDraws,
@@ -67,8 +68,9 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
   player.passTokens.forEach((token) => {
     buffs.push({
       id: makeBuffId(),
-      name: `第${token.level}层通行证`,
-      description: `在第${token.level}层结算时，分数保底为 ${token.threshold} 分。`,
+      name: () => `第${token.level}层通行证`,
+      description: () => `在第${token.level}层结算时，分数保底为 ${token.threshold} 分。`,
+      category: ["token", "permanent"],
       icon: "/src/assets/svg/皇冠_crown-two.svg",
       isPermanent: true,
       count: 1,
@@ -79,8 +81,9 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
   if (player.merchantTokens > 0) {
     buffs.push({
       id: makeBuffId(),
-      name: "商人代币",
-      description: `拥有 ${player.merchantTokens} 枚商人代币，可在旅行商人处使用。`,
+      name: () => "商人代币",
+      description: () => `拥有 ${player.merchantTokens} 枚商人代币，可在旅行商人处使用。`,
+      category: ["token", "permanent"],
       icon: "/src/assets/svg/钻石_diamonds.svg",
       isPermanent: true,
       count: player.merchantTokens,

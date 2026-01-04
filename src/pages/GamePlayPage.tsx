@@ -15,7 +15,6 @@ import InteractionModal from "../components/InteractionModal";
 import DeckBrowserModal from "../components/DeckBrowserModal";
 import {
   acceptMerchantOffer,
-  initializeGameState,
   discardActiveCard,
   drawCards,
   finishPlayerTurn,
@@ -30,11 +29,9 @@ import {
   skipMerchant,
   stashActiveCard,
   discardHoldCard,
+  initializeSituationState,
 } from "../game/engine";
-import {
-  buildCardSituationState,
-  buildSituationState,
-} from "../game/situations";
+import { buildCardSituationState } from "../game/situations";
 import {
   type ActionResult,
   type CardInstance,
@@ -43,15 +40,16 @@ import {
   type DrawResult,
   type EngineError,
   type EngineOutcome,
-  type GameState,
   type ResolveResult,
   AI_LABEL,
   DEFAULT_HAND_SIZE,
   PLAYER_LABEL,
+  SituationState,
 } from "../game/types";
 import { useSettings } from "../context/SettingsContext";
 import "../App.css";
 import "./GamePlayPage.less";
+import GameContext from "../context/GameContext";
 
 const isEngineError = <T,>(outcome: EngineOutcome<T>): outcome is EngineError =>
   (outcome as EngineError)?.type !== undefined;
@@ -80,8 +78,8 @@ const GamePlayPage: React.FC = () => {
     [gameMode, settings.soloAiCount]
   );
 
-  const [gameState, setGameState] = useState<GameState>(() =>
-    initializeGameState(undefined, playerLabels)
+  const [situation, setSituation] = useState<SituationState>(() =>
+    initializeSituationState(undefined, playerLabels)
   );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [animationEvent, setAnimationEvent] =
@@ -94,9 +92,10 @@ const GamePlayPage: React.FC = () => {
   const [showDeckModal, setShowDeckModal] = useState(false);
   const phaseIntroTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interactionAutoRef = useRef<string | null>(null);
+  const gameState = situation.G_state;
 
   useEffect(() => {
-    setGameState(initializeGameState(undefined, playerLabels));
+    setSituation(initializeSituationState(undefined, playerLabels));
     setStatusMessage(null);
     setShowLevelResult(false);
     setShowPhaseIntro(true);
@@ -108,35 +107,29 @@ const GamePlayPage: React.FC = () => {
     }
   }, [playerLabels]);
 
+  // 保证初始层级动画在进入页面时展示
   useEffect(() => {
-    setGameState((s) => {
-      if (s.phase === "levelStart") setShowPhaseIntro(true);
-      return s;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (gameState.phase === "levelStart") {
+    if (situation.G_state.phase === "levelStart") {
       setShowPhaseIntro(true);
       if (phaseIntroTimerRef.current) clearTimeout(phaseIntroTimerRef.current);
       phaseIntroTimerRef.current = setTimeout(() => {
         setShowPhaseIntro(false);
-        setGameState((s) => beginNextPlayerTurn(advanceLevelPhase(s)));
+        setSituation((prev) => beginNextPlayerTurn(advanceLevelPhase(prev)));
       }, 1000);
     }
-  }, [gameState.phase]);
+  }, [situation.G_state.phase]);
 
   useEffect(() => {
-    if (gameState.phase === "finishRound") {
-      setGameState((s) => advanceLevelPhase(s));
+    if (situation.G_state.phase === "finishRound") {
+      setSituation((prev) => advanceLevelPhase(prev));
     }
-  }, [gameState.phase]);
+  }, [situation.G_state.phase]);
 
   useEffect(() => {
-    if (gameState.phase === "finishLevel") {
+    if (situation.G_state.phase === "finishLevel") {
       setShowLevelResult(true);
     }
-  }, [gameState.phase]);
+  }, [situation.G_state.phase]);
 
   // useEffect(() => {
   //   const runWithDelay = async (ms: number) =>
@@ -293,7 +286,7 @@ const GamePlayPage: React.FC = () => {
   //     }
   //   };
 
-  //   if (autoAI && gameState.phase === "playerTurn") {
+  //   if (autoAI && situation.G_state.phase === "playerTurn") {
   //     const current = gameState.players[gameState.currentPlayerIndex];
   //     if (current?.isAI) {
   //       runAiTurn();
@@ -322,14 +315,17 @@ const GamePlayPage: React.FC = () => {
       return;
     }
     console.log("Handling outcome", outcome);
-    setGameState(outcome.state.G_state);
+    setSituation(outcome.state);
     const mergedMessages = resolveOutcomeMessages(outcome);
     setStatusMessage(mergedMessages?.join(" ") ?? null);
-    setGameState((s) => {
-      if (s.phase === "playerTurn" && s.subPhase === "turnStart") {
-        return beginNextPlayerTurn(s);
+    setSituation((prev) => {
+      if (
+        prev.G_state.phase === "playerTurn" &&
+        prev.G_state.subPhase === "turnStart"
+      ) {
+        return beginNextPlayerTurn(prev);
       }
-      return s;
+      return prev;
     });
   };
 
@@ -371,18 +367,18 @@ const GamePlayPage: React.FC = () => {
     const timer = setTimeout(() => {
       const latest = gameState.pendingInteraction;
       if (!latest || latest.id !== interaction.id) return;
-      handleOutcome(resolveInteractionOption(gameState, chosen.id));
+      handleOutcome(resolveInteractionOption(situation, chosen.id));
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [autoAI, gameState, handleOutcome]);
+  }, [autoAI, gameState, handleOutcome, situation]);
 
-  const handleGameStateUpdate = (outcome: EngineOutcome<GameState>) => {
+  const handleSituationUpdate = (outcome: EngineOutcome<SituationState>) => {
     if (isEngineError(outcome)) {
       setStatusMessage(outcome.message);
       return;
     }
-    setGameState(outcome);
+    setSituation(outcome);
     setStatusMessage(null);
   };
 
@@ -408,20 +404,13 @@ const GamePlayPage: React.FC = () => {
 
   const handleDraw = () => {
     if (aiBusy || interactionLocked) return;
-    const phaseCheck = ensurePhase(gameState, "playerTurn", "checkCanDraw");
+    const phaseCheck = ensurePhase(situation, "playerTurn", "checkCanDraw");
     if (phaseCheck) {
       setStatusMessage(phaseCheck.message);
       return;
     }
-    const nextGameState = advanceSubPhase(gameState);
-
-    // 问题在这里:需要创建 SituationState 实例,而不是直接传递 GameState
-    const situation = buildSituationState({
-      state: nextGameState,
-      playerIndex: nextGameState.currentPlayerIndex,
-    });
-
-    const result = drawCards(situation);
+    const nextSituation = advanceSubPhase(situation);
+    const result = drawCards(nextSituation);
 
     if (
       !isEngineError(result) &&
@@ -450,14 +439,10 @@ const GamePlayPage: React.FC = () => {
       });
     }
     if (!isEngineError(result)) {
-      const endState = finishPlayerTurn(result.state.G_state);
-      const newSituation = buildSituationState({
-        state: endState,
-        playerIndex: endState.currentPlayerIndex,
-      });
+      const endSituation = finishPlayerTurn(result.state);
       handleOutcome({
         ...result,
-        state: newSituation,
+        state: endSituation,
       });
     } else {
       handleOutcome(result);
@@ -467,7 +452,7 @@ const GamePlayPage: React.FC = () => {
   const handleStash = () => {
     if (aiBusy || interactionLocked) return;
     const activeCard = gameState.activeCard;
-    const result = stashActiveCard(gameState);
+    const result = stashActiveCard(situation);
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "stash",
@@ -476,12 +461,8 @@ const GamePlayPage: React.FC = () => {
       });
     }
     if (!isEngineError(result)) {
-      const endState = finishPlayerTurn(result.state.G_state);
-      const newSituation = buildSituationState({
-        state: endState,
-        playerIndex: endState.currentPlayerIndex,
-      });
-      handleOutcome({ ...result, state: newSituation });
+      const endSituation = finishPlayerTurn(result.state);
+      handleOutcome({ ...result, state: endSituation });
     } else {
       handleOutcome(result);
     }
@@ -490,7 +471,7 @@ const GamePlayPage: React.FC = () => {
   const handleDiscard = () => {
     if (aiBusy || interactionLocked) return;
     const activeCard = gameState.activeCard;
-    const result = discardActiveCard(gameState);
+    const result = discardActiveCard(situation);
     if (!isEngineError(result) && activeCard) {
       registerAnimation({
         type: "discard",
@@ -499,12 +480,8 @@ const GamePlayPage: React.FC = () => {
       });
     }
     if (!isEngineError(result)) {
-      const endState = finishPlayerTurn(result.state.G_state);
-      const newSituation = buildSituationState({
-        state: endState,
-        playerIndex: endState.currentPlayerIndex,
-      });
-      handleOutcome({ ...result, state: newSituation });
+      const endSituation = finishPlayerTurn(result.state);
+      handleOutcome({ ...result, state: endSituation });
     } else {
       handleOutcome(result);
     }
@@ -519,7 +496,7 @@ const GamePlayPage: React.FC = () => {
     const handCardCount = current?.handCards?.length ?? 0;
     const targetHandCard =
       handCardCount > 0 ? current?.handCards?.[handCardCount - 1] : undefined;
-    const result = releaseHoldCard(gameState);
+    const result = releaseHoldCard(situation);
     if (!isEngineError(result) && targetHandCard) {
       registerAnimation({
         type: "release",
@@ -532,41 +509,41 @@ const GamePlayPage: React.FC = () => {
 
   const handleInteractionSelect = (optionId: string) => {
     if (!pendingInteraction) return;
-    const outcome = resolveInteractionOption(gameState, optionId);
+    const outcome = resolveInteractionOption(situation, optionId);
     handleOutcome(outcome);
   };
 
   const handleEndTurn = () => {
     if (aiBusy || interactionLocked) return;
-    const endState = finishPlayerTurn(gameState);
-    const started = beginNextPlayerTurn(endState);
-    setGameState(started);
+    const endSituation = finishPlayerTurn(situation);
+    const started = beginNextPlayerTurn(endSituation);
+    setSituation(started);
     setStatusMessage("回合已结束，已进入下一位的回合开始阶段。");
   };
 
   const handleSkipMerchant = () => {
-    const nextState = skipMerchant(gameState);
-    setGameState(nextState);
+    const nextState = skipMerchant(situation);
+    setSituation(nextState);
     setStatusMessage("你离开了商人。");
   };
 
   const handleAcceptMerchant = (index: number) => {
-    const result = acceptMerchantOffer(gameState, index);
-    handleGameStateUpdate(result);
+    const result = acceptMerchantOffer(situation, index);
+    handleSituationUpdate(result);
   };
 
   const handleReset = () => {
-    const s = initializeGameState(undefined, playerLabels);
+    const baseSituation = initializeSituationState(undefined, playerLabels);
     setShowPhaseIntro(true);
     if (phaseIntroTimerRef.current) clearTimeout(phaseIntroTimerRef.current);
     phaseIntroTimerRef.current = setTimeout(() => {
-      const started = beginNextPlayerTurn(advanceLevelPhase(s));
-      setGameState(started);
+      const started = beginNextPlayerTurn(advanceLevelPhase(baseSituation));
+      setSituation(started);
     }, 1000);
     setStatusMessage("已重置对决。");
   };
 
-  const isPlayerTurn = gameState.phase === "playerTurn";
+  const isPlayerTurn = situation.G_state.phase === "playerTurn";
   const currentPlayer =
     gameState.players?.[gameState.currentPlayerIndex] ?? gameState.players?.[0];
   const pendingInteraction = gameState.pendingInteraction;
@@ -698,7 +675,7 @@ const GamePlayPage: React.FC = () => {
           label: "丢弃手牌",
           onClick: () => {
             if (aiBusy) return;
-            const res = discardHoldCard(gameState);
+            const res = discardHoldCard(situation);
             handleOutcome(res);
           },
           disabled:
@@ -756,7 +733,7 @@ const GamePlayPage: React.FC = () => {
   }
 
   const matchOutcomeMessage =
-    gameState.phase === "matchEnd"
+    situation.G_state.phase === "matchEnd"
       ? gameState.winner === "Player"
         ? "你赢得了整场对决！"
         : "AI 获得最终胜利。"
@@ -764,177 +741,194 @@ const GamePlayPage: React.FC = () => {
 
   const hasAiPlayer = gameState.players.some((player) => player.isAI);
 
-  return (
-    <div id="app-root">
-      <header className="top-bar">
-        <div className="top-bar__info">
-          <Space align="center" size="middle" wrap>
-            <div className="top-bar__title">
-              <h1>纯粹抽卡决斗</h1>
-              <p>
-                模式：{gameMode === "solo" ? "单人" : "对战"}｜层级{" "}
-                {gameState.level}
-              </p>
-              <p>
-                阶段：{gameState.phase}
-                ｜子阶段： {gameState.subPhase ?? "无"}
-                &nbsp;｜ 目前在关注的牌：{activeCard?.C_name}#
-                {activeCard?.instanceId}
-              </p>
-            </div>
-            {statusMessage ? (
-              <span className="top-bar__chip top-bar__chip--status">
-                {statusMessage}
-              </span>
-            ) : null}
-            {matchOutcomeMessage ? (
-              <span className="top-bar__chip top-bar__chip--success">
-                {matchOutcomeMessage}
-              </span>
-            ) : null}
-          </Space>
-        </div>
-        <div className="top-bar__actions">
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() => navigate("/")}
-          >
-            返回大厅
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={handleReset}
-          >
-            重置对决
-          </button>
-          {hasAiPlayer ? (
-            <div className="ai-toggle">
-              <span>允许 AI 自动操作</span>
-              <Switch checked={autoAI} onChange={setAutoAI} />
-            </div>
-          ) : null}
-        </div>
-      </header>
+  const gameContextValue = {
+    situation,
+    setSituation,
+    registerAnimation,
+    handleOutcome: (outcome: unknown) =>
+      handleOutcome(
+        outcome as EngineOutcome<ActionResult | ResolveResult | DrawResult>
+      ),
+    autoAI,
+    setAutoAI,
+    interactionLocked,
+    currentPlayerIndex: gameState.currentPlayerIndex,
+    activeCard,
+  };
 
-      <div className="layout">
-        <div className="layout__top">
-          <div className="layout__top-left">
-            <Space className="players-wrapper">
-              {gameState.players?.map((player, idx) => (
-                <PlayerHUD
-                  key={player.label + idx}
-                  gameState={gameState}
-                  playerIndex={idx}
-                  isCurrent={
-                    gameState.currentPlayerIndex === idx && isPlayerTurn
-                  }
-                />
-              ))}
+  return (
+    <GameContext.Provider value={gameContextValue}>
+      <div id="app-root">
+        <header className="top-bar">
+          <div className="top-bar__info">
+            <Space align="center" size="middle" wrap>
+              <div className="top-bar__title">
+                <h1>纯粹抽卡决斗</h1>
+                <p>
+                  模式：{gameMode === "solo" ? "单人" : "对战"}｜层级{" "}
+                  {gameState.level}
+                </p>
+                <p>
+                  阶段：{situation.G_state.phase}
+                  ｜子阶段： {gameState.subPhase ?? "无"}
+                  &nbsp;｜ 目前在关注的牌：{activeCard?.C_name}#
+                  {activeCard?.instanceId}
+                </p>
+              </div>
+              {statusMessage ? (
+                <span className="top-bar__chip top-bar__chip--status">
+                  {statusMessage}
+                </span>
+              ) : null}
+              {matchOutcomeMessage ? (
+                <span className="top-bar__chip top-bar__chip--success">
+                  {matchOutcomeMessage}
+                </span>
+              ) : null}
             </Space>
           </div>
-          <div className="layout__top-right">
-            <TurnLog entries={gameState.log} />
+          <div className="top-bar__actions">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => navigate("/")}
+            >
+              返回大厅
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={handleReset}
+            >
+              重置对决
+            </button>
+            {hasAiPlayer ? (
+              <div className="ai-toggle">
+                <span>允许 AI 自动操作</span>
+                <Switch checked={autoAI} onChange={setAutoAI} />
+              </div>
+            ) : null}
+          </div>
+        </header>
+
+        <div className="layout">
+          <div className="layout__top">
+            <div className="layout__top-left">
+              <Space className="players-wrapper">
+                {gameState.players?.map((player, idx) => (
+                  <PlayerHUD
+                    key={player.label + idx}
+                    gameState={gameState}
+                    playerIndex={idx}
+                    isCurrent={
+                      gameState.currentPlayerIndex === idx && isPlayerTurn
+                    }
+                  />
+                ))}
+              </Space>
+            </div>
+            <div className="layout__top-right">
+              <TurnLog entries={gameState.log} />
+            </div>
+          </div>
+
+          <div className="layout__bottom">
+            <section className="action-panel">
+              <h3>玩家操作</h3>
+              <div className="action-panel__buttons">
+                {actionButtons.map((action) => {
+                  const buttonClasses = ["btn"];
+                  if (isPlayerTurn && !action.disabled) {
+                    buttonClasses.push("btn--glow");
+                  }
+                  return (
+                    <div key={action.key} className="action-panel__button">
+                      <Tooltip title={action.tooltip} placement="top">
+                        <button
+                          type="button"
+                          className={buttonClasses.join(" ")}
+                          onClick={action.onClick}
+                          disabled={action.disabled}
+                        >
+                          {action.label}
+                        </button>
+                      </Tooltip>
+                    </div>
+                  );
+                })}
+                <div className="action-panel__button">
+                  <Tooltip
+                    title="直接结束你的回合(有卡未处理自动丢弃)"
+                    placement="top"
+                  >
+                    <button
+                      type="button"
+                      className={endTurnButtonClasses.join(" ")}
+                      onClick={handleEndTurn}
+                      disabled={endTurnDisabled}
+                    >
+                      结束回合
+                    </button>
+                  </Tooltip>
+                </div>
+              </div>
+
+              <CardLane
+                deckStats={deckStats}
+                deckRemaining={gameState.deck.drawPile.length}
+                activeCardState={activeCardState}
+                drawnStates={drawnStates}
+                stashedStates={stashedStates}
+                handStates={handStates}
+                handSize={handSize}
+                animationEvent={animationEvent}
+                pendingInteraction={pendingInteraction}
+                interactionOwnerName={
+                  interactionOwner?.logPrefix ?? interactionOwner?.label
+                }
+                isInteractionOwner={isLocalInteractionOwner}
+                onDeckClick={() => setShowDeckModal(true)}
+                handlePlay={handlePlay}
+              />
+            </section>
           </div>
         </div>
-
-        <div className="layout__bottom">
-          <section className="action-panel">
-            <h3>玩家操作</h3>
-            <div className="action-panel__buttons">
-              {actionButtons.map((action) => {
-                const buttonClasses = ["btn"];
-                if (isPlayerTurn && !action.disabled) {
-                  buttonClasses.push("btn--glow");
-                }
-                return (
-                  <div key={action.key} className="action-panel__button">
-                    <Tooltip title={action.tooltip} placement="top">
-                      <button
-                        type="button"
-                        className={buttonClasses.join(" ")}
-                        onClick={action.onClick}
-                        disabled={action.disabled}
-                      >
-                        {action.label}
-                      </button>
-                    </Tooltip>
-                  </div>
-                );
-              })}
-              <div className="action-panel__button">
-                <Tooltip
-                  title="直接结束你的回合(有卡未处理自动丢弃)"
-                  placement="top"
-                >
-                  <button
-                    type="button"
-                    className={endTurnButtonClasses.join(" ")}
-                    onClick={handleEndTurn}
-                    disabled={endTurnDisabled}
-                  >
-                    结束回合
-                  </button>
-                </Tooltip>
-              </div>
-            </div>
-
-            <CardLane
-              deckStats={deckStats}
-              deckRemaining={gameState.deck.drawPile.length}
-              activeCardState={activeCardState}
-              drawnStates={drawnStates}
-              stashedStates={stashedStates}
-              handStates={handStates}
-              handSize={handSize}
-              animationEvent={animationEvent}
-              pendingInteraction={pendingInteraction}
-              interactionOwnerName={
-                interactionOwner?.logPrefix ?? interactionOwner?.label
-              }
-              isInteractionOwner={isLocalInteractionOwner}
-              onDeckClick={() => setShowDeckModal(true)}
-              handlePlay={handlePlay}
-            />
-          </section>
-        </div>
+        <InteractionModal
+          interaction={pendingInteraction}
+          visible={Boolean(pendingInteraction && isLocalInteractionOwner)}
+          ownerLabel={
+            interactionOwner?.logPrefix ?? interactionOwner?.label ?? "你"
+          }
+          onSelect={handleInteractionSelect}
+        />
+        <MerchantModal
+          isOpen={situation.G_state.phase === "merchant"}
+          offers={gameState.merchantOffers}
+          onAccept={handleAcceptMerchant}
+          onSkip={handleSkipMerchant}
+        />
+        <DeckBrowserModal
+          open={showDeckModal}
+          onClose={() => setShowDeckModal(false)}
+          cards={deckCardStates}
+        />
+        <LevelResultModal
+          open={showLevelResult}
+          players={gameState.players}
+          level={gameState.level}
+          onClose={() => {
+            setShowLevelResult(false);
+            setSituation((prev) => finishLevel(prev));
+          }}
+        />
+        <PhaseIntroModal
+          open={showPhaseIntro}
+          level={gameState.level}
+          levelName={getLevelConfig(gameState.level).name}
+          onClose={() => setShowPhaseIntro(false)}
+        />
       </div>
-      <InteractionModal
-        interaction={pendingInteraction}
-        visible={Boolean(pendingInteraction && isLocalInteractionOwner)}
-        ownerLabel={
-          interactionOwner?.logPrefix ?? interactionOwner?.label ?? "你"
-        }
-        onSelect={handleInteractionSelect}
-      />
-      <MerchantModal
-        isOpen={gameState.phase === "merchant"}
-        offers={gameState.merchantOffers}
-        onAccept={handleAcceptMerchant}
-        onSkip={handleSkipMerchant}
-      />
-      <DeckBrowserModal
-        open={showDeckModal}
-        onClose={() => setShowDeckModal(false)}
-        cards={deckCardStates}
-      />
-      <LevelResultModal
-        open={showLevelResult}
-        players={gameState.players}
-        level={gameState.level}
-        onClose={() => {
-          setShowLevelResult(false);
-          setGameState((s) => finishLevel(s));
-        }}
-      />
-      <PhaseIntroModal
-        open={showPhaseIntro}
-        level={gameState.level}
-        levelName={getLevelConfig(gameState.level).name}
-        onClose={() => setShowPhaseIntro(false)}
-      />
-    </div>
+    </GameContext.Provider>
   );
 };
 
