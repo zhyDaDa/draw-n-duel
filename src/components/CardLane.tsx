@@ -139,6 +139,9 @@ const CardLane: React.FC<CardLaneProps> = ({
       document.body.appendChild(root);
     }
     floatRootRef.current = root;
+
+    const cleanupScroll = setCustomizedScroll();
+
     return () => {
       // 清理定时器
       if (enterTimerRef.current) {
@@ -149,23 +152,35 @@ const CardLane: React.FC<CardLaneProps> = ({
         window.clearTimeout(exitTimerRef.current);
         exitTimerRef.current = null;
       }
+      if (cleanupScroll) {
+        cleanupScroll();
+      }
       // 不删除 root，避免多次创建；若需要清理可在这里处理
     };
   }, []);
 
-  const onWheel = (e: React.WheelEvent) => {
+  const setCustomizedScroll = () => {
     const el = handRef.current;
     if (!el) return;
-    const canScrollH = el.scrollWidth > el.clientWidth + 1;
-    if (!canScrollH) return; // 无需横向滚动
 
-    // 若有水平滚动量直接使用，否则将垂直转为横向滚动
-    const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
-    if (Math.abs(delta) > 0) {
-      e.preventDefault();
-      // 轻微缓冲，避免滚动过快
-      el.scrollLeft += delta / 5;
-    }
+    const wheelHandler = (e: WheelEvent) => {
+      const canScrollH = el.scrollWidth > el.clientWidth + 1;
+      if (!canScrollH) return; // 无需横向滚动
+
+      // 若有水平滚动量直接使用，否则将垂直转为横向滚动
+      const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+      if (Math.abs(delta) > 0) {
+        e.preventDefault();
+        // 轻微缓冲，避免滚动过快
+        el.scrollLeft += delta / 5;
+      }
+    };
+
+    el.addEventListener("wheel", wheelHandler, { passive: false });
+
+    return () => {
+      el.removeEventListener("wheel", wheelHandler);
+    };
   };
 
   // 悬停开始/结束：把卡片 DOM 的 bounding rect 记录下来并 portal 渲染
@@ -418,7 +433,7 @@ const CardLane: React.FC<CardLaneProps> = ({
         ref={handRef}
         className="card-lane__hand"
         aria-label="卡槽区"
-        onWheel={onWheel}
+        // onWheel={onWheel}
       >
         <Flex className="card-lane__slots">
           {slots.length === 0 ? (
