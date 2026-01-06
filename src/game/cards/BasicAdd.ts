@@ -19,7 +19,11 @@ export const BasicAdd = createCard({
     },
     notes: (state) => {
       const score = state.C_current.C_effect.valueDict.score;
-      return `+ ${score.modified ?? score.base} 分`;
+      if (score.modified) {
+        return `获得 ${score.modified}(${score.base}) 分`;
+      } else {
+        return `获得 ${score.base} 分`;
+      }
     },
     onCreate: (state) => {
       const delta = (state.G_state.level + 1) ** 2;

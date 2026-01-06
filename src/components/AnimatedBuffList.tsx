@@ -1,16 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { PlayerBuff } from "../game/types";
+import type { BuffDefinition } from "../game/types";
 import BuffDisplay from "./BuffDisplay";
 
 interface AnimatedBuffListProps {
-  buffs: PlayerBuff[];
+  buffs: BuffDefinition[];
   // 用于固定容器高度，避免从无到有布局跳动
   minRows?: number;
 }
 
 // 简易入场（由大到正常）与出场（淡出）动画：由 CSS 类控制
 type ItemState = "enter" | "exit";
-type BuffItem = { key: string; buff: PlayerBuff; state: ItemState };
+type BuffItem = { key: string; buff: BuffDefinition; state: ItemState };
 
 const AnimatedBuffList: React.FC<AnimatedBuffListProps> = ({ buffs, minRows = 1 }) => {
   const [items, setItems] = useState<BuffItem[]>(() =>

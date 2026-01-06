@@ -233,7 +233,7 @@ const CardLane: React.FC<CardLaneProps> = ({
     try {
       handlePlay(floating.state);
     } catch (err) {
-      // ignore
+      console.error("Error playing card from floating:", err);
     }
     // start exit animation then unmount
     setFloatingActive(false);

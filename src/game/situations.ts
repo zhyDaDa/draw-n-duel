@@ -17,9 +17,12 @@ type SituationParams = {
 export const buildSituationState = (
   params: SituationParams
 ): SituationState => {
-  const playerIndex = params.playerIndex ?? 
-    (params.player ? params.state.players.indexOf(params.player) : params.state.currentPlayerIndex);
-  
+  const playerIndex =
+    params.playerIndex ??
+    (params.player
+      ? params.state.players.indexOf(params.player)
+      : params.state.currentPlayerIndex);
+
   return new SituationState({
     gameState: params.state,
     currentPlayerIndex: playerIndex,

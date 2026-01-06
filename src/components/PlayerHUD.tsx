@@ -1,5 +1,5 @@
 import AnimatedBuffList from "./AnimatedBuffList";
-import { type GameState, type PlayerBuff } from "../game/types";
+import { type GameState, type BuffDefinition } from "../game/types";
 import "./PlayerHUD.less";
 
 interface PlayerHUDProps {
@@ -19,7 +19,7 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
   // 转换现有数据到 Buff 系统
   let syntheticBuffId = 1;
   const makeBuffId = () => syntheticBuffId++;
-  const buffs: PlayerBuff[] = [];
+  const buffs: BuffDefinition[] = [];
 
   // 胜利碎片 Buff —— 按颜色展示，每种颜色单独计数
   if (player.victoryShards && Object.keys(player.victoryShards).length > 0) {

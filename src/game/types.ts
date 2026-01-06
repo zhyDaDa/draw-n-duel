@@ -1,7 +1,10 @@
+import { deepCopy } from "../utils";
+
 export type CardColor = "black" | "blue" | "red" | "golden" | "colorless";
 
 export type EffectType =
   | "math"
+  | "mathBuff"
   | "set"
   | "reset"
   | "extraDraw"
@@ -19,12 +22,7 @@ export type EffectType =
 
 export type TargetType = "self" | "opponent" | "both";
 
-export type Rarity =
-  | "common"
-  | "uncommon"
-  | "rare"
-  | "legendary"
-  | "mythic";
+export type Rarity = "common" | "uncommon" | "rare" | "legendary" | "mythic";
 
 /**
  * 游戏情境状态的统一封装类
@@ -293,22 +291,6 @@ const cloneInteractionRequest = (
 });
 
 /**
- * 深拷贝 PlayerBuff
- * - name/description 可能是 SituationFunction，保持引用
- * - 拷贝 category 数组和 valueDict
- * - 保持所有回调函数引用：onTurnStart, onTurnEnd, onAfterDraw, 等
- */
-const clonePlayerBuff = (buff: PlayerBuff): PlayerBuff => ({
-  ...buff,
-  category: buff.category
-    ? Array.isArray(buff.category)
-      ? [...buff.category]
-      : buff.category
-    : [],
-  valueDict: buff.valueDict ? { ...buff.valueDict } : {},
-});
-
-/**
  * 深拷贝 DeckState
  * - 深拷贝 drawPile 和 discardPile 中的所有卡牌
  * - 拷贝 publicInfo 对象
@@ -334,7 +316,7 @@ const clonePlayerState = (player: PlayerState): PlayerState => ({
   stashedCards: player.stashedCards.map(cloneCardInstance),
   victoryShards: { ...player.victoryShards },
   passTokens: player.passTokens.map((token) => ({ ...token })),
-  buffs: player.buffs.map(clonePlayerBuff),
+  buffs: player.buffs.map((buff) => buff.clone()),
 });
 
 /**
@@ -343,7 +325,7 @@ const clonePlayerState = (player: PlayerState): PlayerState => ({
  */
 const cloneMerchantOffer = (offer: MerchantOffer): MerchantOffer => ({
   cost: offer.cost,
-  buff: clonePlayerBuff(offer.buff),
+  buff: offer.buff.clone(),
 });
 
 /**
@@ -601,7 +583,7 @@ export interface PlayerState {
   /** 为该玩家记录动作或事件时使用的简短前缀字符串 */
   logPrefix: string;
   /** 影响行为或统计的活跃临时或永久玩家增益/效果 */
-  buffs: PlayerBuff[];
+  buffs: BuffDefinition[];
   /** 可选标志，表示该玩家是否由 AI 控制 */
   isAI?: boolean;
 }
@@ -621,6 +603,7 @@ export type PlayerBuffCategory =
   | "buff"
   | "debuff"
   | "shield"
+  | "math"
   | "extraDraw"
   | "temporary"
   | "permanent"
@@ -628,29 +611,144 @@ export type PlayerBuffCategory =
   | "token"
   | "statusChange";
 
-export interface PlayerBuff {
-  id: number;
-  name: SituationFunction<string>;
-  description: SituationFunction<string>;
-  icon: string;
-  isPermanent: boolean;
-  duration?: number;
-  count?: number;
-  category: PlayerBuffCategory[];
-  valueDict?: Record<string, number>;
-  maxStacks?: number;
-  onTurnStart?: SituationFunction<void>;
-  onTurnEnd?: SituationFunction<void>;
-  onAfterDraw?: SituationFunction<void>;
-  onBeforePlay?: SituationFunction<void>;
-  onAfterPlay?: SituationFunction<void>;
-  onBeforeStash?: SituationFunction<void>;
-  onAfterStash?: SituationFunction<void>;
+export type BuffSituationFunction<R = void> = (
+  self: BuffDefinition,
+  state: SituationState
+) => R;
+
+function* BuffIdGenerator(): Generator<number, number, never> {
+  let currentId = 0;
+  while (true) {
+    yield currentId++;
+  }
 }
+
+export class BuffDefinition {
+  B_id: number;
+  B_definitionId: string;
+  B_name: BuffSituationFunction<string>;
+  B_description: BuffSituationFunction<string>;
+  B_icon: string;
+  B_isPermanent: boolean;
+  B_category?: PlayerBuffCategory[];
+  B_valueDict: Record<string, number>;
+  B_maxCount?: number;
+  B_maxStacks?: number;
+  B_onCreate?: BuffSituationFunction<void>;
+  B_onTurnStart?: BuffSituationFunction<void>;
+  B_onTurnEnd?: BuffSituationFunction<void>;
+  B_onAfterDraw?: BuffSituationFunction<void>;
+  B_onBeforePlay?: BuffSituationFunction<void>;
+  B_onAfterPlay?: BuffSituationFunction<void>;
+  B_onBeforeStash?: BuffSituationFunction<void>;
+  B_onAfterStash?: BuffSituationFunction<void>;
+
+  count: number = 0;
+  duration: number = 0;
+
+  constructor(params: {
+    B_id?: number;
+    B_definitionId: string;
+    B_name: BuffSituationFunction<string>;
+    B_description: BuffSituationFunction<string>;
+    B_icon: string;
+    B_isPermanent?: boolean;
+    B_category?: PlayerBuffCategory[];
+    B_valueDict: Record<string, number>;
+    B_maxCount?: number;
+    B_maxStacks?: number;
+    B_onCreate?: BuffSituationFunction<void>;
+    B_onTurnStart?: BuffSituationFunction<void>;
+    B_onTurnEnd?: BuffSituationFunction<void>;
+    B_onAfterDraw?: BuffSituationFunction<void>;
+    B_onBeforePlay?: BuffSituationFunction<void>;
+    B_onAfterPlay?: BuffSituationFunction<void>;
+    B_onBeforeStash?: BuffSituationFunction<void>;
+    B_onAfterStash?: BuffSituationFunction<void>;
+  }) {
+    this.B_id = params.B_id ?? BuffIdGenerator().next().value;
+    this.B_definitionId = params.B_definitionId;
+    this.B_name = params.B_name;
+    this.B_description = params.B_description;
+    this.B_icon = params.B_icon;
+    this.B_isPermanent = params.B_isPermanent ?? false;
+    this.B_category = params.B_category;
+    this.B_valueDict = params.B_valueDict;
+    this.B_maxCount = params.B_maxCount;
+    this.B_maxStacks = params.B_maxStacks;
+    this.B_onCreate = params.B_onCreate;
+    this.B_onTurnStart = params.B_onTurnStart;
+    this.B_onTurnEnd = params.B_onTurnEnd;
+    this.B_onAfterDraw = params.B_onAfterDraw;
+    this.B_onBeforePlay = params.B_onBeforePlay;
+    this.B_onAfterPlay = params.B_onAfterPlay;
+    this.B_onBeforeStash = params.B_onBeforeStash;
+    this.B_onAfterStash = params.B_onAfterStash;
+  }
+
+  /**
+   * 生成运行时的 BuffDefinition 实例（用于放入 GameState.players[].buffs）
+   * 接受可选 overrides 用于运行时参数（如 count/duration/id）
+   */
+  createInstance(
+    state: BuffSituationState,
+    overrides?: Partial<BuffDefinition> & { id?: number }
+  ): BuffDefinition {
+    const instance = this.clone();
+    instance.B_id = overrides?.id ?? BuffIdGenerator().next().value;
+    if (overrides) {
+      Object.assign(instance, overrides);
+    }
+    this.B_onCreate?.(this, state); // 调用 onCreate 回调
+    return instance;
+  }
+
+  clone(): BuffDefinition {
+    return new BuffDefinition({
+      B_id: this.B_id,
+      B_definitionId: this.B_definitionId,
+      B_name: this.B_name,
+      B_description: this.B_description,
+      B_icon: this.B_icon,
+      B_isPermanent: this.B_isPermanent,
+      B_category: deepCopy(this.B_category),
+      B_valueDict: deepCopy(this.B_valueDict),
+      B_maxCount: this.B_maxCount,
+      B_maxStacks: this.B_maxStacks,
+      B_onCreate: this.B_onCreate,
+      B_onTurnStart: this.B_onTurnStart,
+      B_onTurnEnd: this.B_onTurnEnd,
+      B_onAfterDraw: this.B_onAfterDraw,
+      B_onBeforePlay: this.B_onBeforePlay,
+      B_onAfterPlay: this.B_onAfterPlay,
+      B_onBeforeStash: this.B_onBeforeStash,
+      B_onAfterStash: this.B_onAfterStash,
+    });
+  }
+}
+
+export const createBuff = (payload: {
+  B_id?: number;
+  B_definitionId: string;
+  B_name: BuffSituationFunction<string>;
+  B_description: BuffSituationFunction<string>;
+  B_icon: string;
+  B_isPermanent?: boolean;
+  B_category?: PlayerBuffCategory[];
+  B_valueDict: Record<string, number>;
+  B_maxStacks?: number;
+  B_onTurnStart?: BuffSituationFunction<void>;
+  B_onTurnEnd?: BuffSituationFunction<void>;
+  B_onAfterDraw?: BuffSituationFunction<void>;
+  B_onBeforePlay?: BuffSituationFunction<void>;
+  B_onAfterPlay?: BuffSituationFunction<void>;
+  B_onBeforeStash?: BuffSituationFunction<void>;
+  B_onAfterStash?: BuffSituationFunction<void>;
+}) => new BuffDefinition(payload);
 
 export interface MerchantOffer {
   cost: string;
-  buff: PlayerBuff;
+  buff: BuffDefinition;
 }
 
 export type InteractionType = "choice" | "payment" | "gamble" | "miniGame";

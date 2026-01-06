@@ -9,7 +9,7 @@ import { DEFAULT_LEVEL_RANGE } from "../constants";
 
 // 自动使用文件名作为变量名
 export const BasicExtraDraw = createCard({
-  C_id: "basicextradraw",
+  C_id: "basic-extra-draw",
   C_name: "额外抽卡",
   C_rarity: "uncommon" as Rarity,
   C_baseWeight: 2, // 加法的权重是10
