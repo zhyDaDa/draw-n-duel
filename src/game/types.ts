@@ -643,8 +643,8 @@ export class BuffDefinition {
   B_onBeforeStash?: BuffSituationFunction<void>;
   B_onAfterStash?: BuffSituationFunction<void>;
 
-  count: number = 0;
-  duration: number = 0;
+  count?: number;
+  duration?: number;
 
   constructor(params: {
     B_id?: number;

@@ -12,18 +12,30 @@ export const BuffDisplay: React.FC<BuffDisplayProps> = ({ buff }) => {
   const tooltipContent = (
     <div className="buff-tooltip">
       <header>
-        <strong>{typeof buff.B_name === "function" ? buff.B_name(buff, situation) : "(增益)"}</strong>
-        {!buff.B_isPermanent && <span className="buff-tooltip__temp">临时</span>}
+        <strong>
+          {typeof buff.B_name === "function"
+            ? buff.B_name(buff, situation)
+            : "(增益)"}
+        </strong>
+        {!buff.B_isPermanent && (
+          <span className="buff-tooltip__temp">临时</span>
+        )}
       </header>
-      <p>{typeof buff.B_description === "function" ? buff.B_description(buff, situation) : ""}</p>
+      <p>
+        {typeof buff.B_description === "function"
+          ? buff.B_description(buff, situation)
+          : ""}
+      </p>
       <footer>
         <span>类型: {buff.B_category?.join("/") ?? "—"}</span>
+        <br />
         <span>
           数值:
           {typeof buff.B_valueDict === "undefined"
             ? "—"
             : Object.entries(buff.B_valueDict).map(([k, v]) => (
                 <li key={k}>
+                  {" - "}
                   {k}: {v}
                 </li>
               ))}
@@ -35,10 +47,17 @@ export const BuffDisplay: React.FC<BuffDisplayProps> = ({ buff }) => {
   return (
     <Tooltip title={tooltipContent} overlayClassName="tooltip-light">
       <div
-        className={`buff-display ${!buff.B_isPermanent ? "buff-display--temp" : ""}`}>
+        className={`buff-display ${
+          !buff.B_isPermanent ? "buff-display--temp" : ""
+        }`}
+      >
         <img
           src={buff.B_icon}
-          alt={typeof buff.B_name === "function" ? buff.B_name(buff, situation) : "Buff 图标"}
+          alt={
+            typeof buff.B_name === "function"
+              ? buff.B_name(buff, situation)
+              : "Buff 图标"
+          }
           className="buff-display__icon"
         />
         {buff.count && buff.count > 1 && (

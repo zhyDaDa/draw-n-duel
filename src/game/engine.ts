@@ -157,13 +157,13 @@ const invokeCardHook = (
 };
 
 type BuffLifecycleHook =
-  | "onTurnStart"
-  | "onTurnEnd"
-  | "onAfterDraw"
-  | "onBeforePlay"
-  | "onAfterPlay"
-  | "onBeforeStash"
-  | "onAfterStash";
+  | "B_onTurnStart"
+  | "B_onTurnEnd"
+  | "B_onAfterDraw"
+  | "B_onBeforePlay"
+  | "B_onAfterPlay"
+  | "B_onBeforeStash"
+  | "B_onAfterStash";
 
 const invokeBuffHook = (
   state: SituationState,
@@ -425,7 +425,7 @@ export function nextSubPhase(state: GameState): void {
       resetPlayerHandState(current);
       invokeBuffHook(
         buildSituationState({ state, playerIndex: state.currentPlayerIndex }),
-        "onTurnStart"
+        "B_onTurnStart"
       );
       state.subPhase = "checkCanDraw";
       break;
@@ -452,7 +452,7 @@ export function nextSubPhase(state: GameState): void {
     case "turnEnd": {
       invokeBuffHook(
         buildSituationState({ state, playerIndex: state.currentPlayerIndex }),
-        "onTurnEnd"
+        "B_onTurnEnd"
       );
       if (allPlayersCannotDraw(state)) {
         appendLog(state, "所有玩家抽牌机会已用尽，进入本轮结算。");
@@ -543,11 +543,13 @@ export const drawCards = (
         playerIndex: state.G_state.currentPlayerIndex,
         card,
       }),
-      "onAfterDraw"
+      "B_onAfterDraw"
     );
+    console.log("after onAfterDraw, card:", card);
   }
 
   const log = `${player.logPrefix} 抽取了 ${cards.length} 张卡牌。`;
+  console.log(cards);
   appendLog(state.G_state, log);
   setSubPhase(state.G_state, "waitingDrawChoice");
 
@@ -588,7 +590,7 @@ export const playActiveCard = (
 
   // 从玩家的抽牌列表移除该卡（克隆后的引用）并触发前置 Buff 钩子
   removeDrawnCard(player, card);
-  invokeBuffHook(situation, "onBeforePlay");
+  invokeBuffHook(situation, "B_onBeforePlay");
   setSubPhase(state, "onUseCard");
 
   const messages = applyCardTo(state, player, card, "onUseCard");
@@ -599,7 +601,7 @@ export const playActiveCard = (
     // 新模型不再使用 state.activeCard，直接将卡片结算并丢弃
     addCardToDiscard(state, card);
     player.targetCard = null;
-    invokeBuffHook(situation, "onAfterPlay");
+    invokeBuffHook(situation, "B_onAfterPlay");
     // 保持原有子阶段推进行为
     setSubPhase(state, "onUseCard");
     nextSubPhase(state);
@@ -702,7 +704,7 @@ export const stashActiveCard = (
       playerIndex: state.currentPlayerIndex,
       card: activeCard,
     }),
-    "onBeforeStash"
+    "B_onBeforeStash"
   );
 
   removeDrawnCard(player, activeCard);
@@ -718,7 +720,7 @@ export const stashActiveCard = (
       playerIndex: state.currentPlayerIndex,
       card: activeCard,
     }),
-    "onAfterStash"
+    "B_onAfterStash"
   );
 
   setSubPhase(state, "onStashCard");
@@ -809,7 +811,7 @@ export const releaseHoldCard = (
       playerIndex: state.currentPlayerIndex,
       card: handCard,
     }),
-    "onBeforePlay"
+    "B_onBeforePlay"
   );
 
   const messages = applyCardTo(state, actor, handCard, "checkCanDraw");
@@ -825,7 +827,7 @@ export const releaseHoldCard = (
         playerIndex: state.currentPlayerIndex,
         card: handCard,
       }),
-      "onAfterPlay"
+      "B_onAfterPlay"
     );
     actor.targetCard = null;
     setSubPhase(state, "checkCanDraw");

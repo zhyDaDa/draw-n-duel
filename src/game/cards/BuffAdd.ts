@@ -60,6 +60,10 @@ export const BuffAdd = createCard({
               targetValDict.score.modified =
                 (targetValDict.score.modified ?? targetValDict.score.base) +
                 (self.B_valueDict.modified ?? self.B_valueDict.base);
+              console.log(
+                `%c加法增幅器生效! modified = ${targetValDict.score.modified}`,
+                "color: orange;"
+              );
             }
           }
         },
