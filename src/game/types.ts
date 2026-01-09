@@ -623,13 +623,13 @@ function* BuffIdGenerator(): Generator<number, number, never> {
   }
 }
 
-export class BuffDefinition {
-  B_id: number;
+export interface BuffCreatePayLoad {
+  B_id?: number;
   B_definitionId: string;
   B_name: BuffSituationFunction<string>;
   B_description: BuffSituationFunction<string>;
   B_icon: string;
-  B_isPermanent: boolean;
+  B_isPermanent?: boolean;
   B_category?: PlayerBuffCategory[];
   B_valueDict: Record<string, number>;
   B_maxCount?: number;
@@ -642,30 +642,37 @@ export class BuffDefinition {
   B_onAfterPlay?: BuffSituationFunction<void>;
   B_onBeforeStash?: BuffSituationFunction<void>;
   B_onAfterStash?: BuffSituationFunction<void>;
+  count?: number;
+  canCombine?: boolean;
+}
+
+export class BuffDefinition {
+  B_id!: number;
+  B_definitionId!: string;
+  B_name!: BuffSituationFunction<string>;
+  B_description!: BuffSituationFunction<string>;
+  B_icon!: string;
+  B_isPermanent!: boolean;
+  B_category?: PlayerBuffCategory[];
+  B_valueDict!: Record<string, number>;
+  B_maxCount?: number;
+  B_maxStacks?: number;
+  B_onCreate?: BuffSituationFunction<void>;
+  B_onCombine?: (state: BuffSituationState, target: BuffDefinition) => void;
+
+  B_onTurnStart?: BuffSituationFunction<void>;
+  B_onTurnEnd?: BuffSituationFunction<void>;
+  B_onAfterDraw?: BuffSituationFunction<void>;
+  B_onBeforePlay?: BuffSituationFunction<void>;
+  B_onAfterPlay?: BuffSituationFunction<void>;
+  B_onBeforeStash?: BuffSituationFunction<void>;
+  B_onAfterStash?: BuffSituationFunction<void>;
 
   count?: number;
   duration?: number;
+  canCombine?: boolean; // 相同buff能否直接叠加
 
-  constructor(params: {
-    B_id?: number;
-    B_definitionId: string;
-    B_name: BuffSituationFunction<string>;
-    B_description: BuffSituationFunction<string>;
-    B_icon: string;
-    B_isPermanent?: boolean;
-    B_category?: PlayerBuffCategory[];
-    B_valueDict: Record<string, number>;
-    B_maxCount?: number;
-    B_maxStacks?: number;
-    B_onCreate?: BuffSituationFunction<void>;
-    B_onTurnStart?: BuffSituationFunction<void>;
-    B_onTurnEnd?: BuffSituationFunction<void>;
-    B_onAfterDraw?: BuffSituationFunction<void>;
-    B_onBeforePlay?: BuffSituationFunction<void>;
-    B_onAfterPlay?: BuffSituationFunction<void>;
-    B_onBeforeStash?: BuffSituationFunction<void>;
-    B_onAfterStash?: BuffSituationFunction<void>;
-  }) {
+  constructor(params: BuffCreatePayLoad) {
     this.B_id = params.B_id ?? BuffIdGenerator().next().value;
     this.B_definitionId = params.B_definitionId;
     this.B_name = params.B_name;
@@ -684,6 +691,17 @@ export class BuffDefinition {
     this.B_onAfterPlay = params.B_onAfterPlay;
     this.B_onBeforeStash = params.B_onBeforeStash;
     this.B_onAfterStash = params.B_onAfterStash;
+    this.count = params.count;
+    this.canCombine = params.canCombine;
+    console.log("###", this);
+
+    // 运行时简单断言，帮助在开发阶段尽早发现缺失的必需字段
+    const _required = ["B_definitionId", "B_name", "B_icon", "B_valueDict"];
+    for (const k of _required) {
+      if ((this as any)[k] === undefined) {
+        throw new Error(`BuffDefinition missing required field ${k}`);
+      }
+    }
   }
 
   /**
@@ -699,52 +717,21 @@ export class BuffDefinition {
     if (overrides) {
       Object.assign(instance, overrides);
     }
-    this.B_onCreate?.(this, state); // 调用 onCreate 回调
+    instance.B_onCreate?.(instance, state); // 调用 onCreate 回调
     return instance;
   }
 
   clone(): BuffDefinition {
     return new BuffDefinition({
-      B_id: this.B_id,
-      B_definitionId: this.B_definitionId,
-      B_name: this.B_name,
-      B_description: this.B_description,
-      B_icon: this.B_icon,
-      B_isPermanent: this.B_isPermanent,
+      ...(this as unknown as BuffCreatePayLoad),
       B_category: deepCopy(this.B_category),
       B_valueDict: deepCopy(this.B_valueDict),
-      B_maxCount: this.B_maxCount,
-      B_maxStacks: this.B_maxStacks,
-      B_onCreate: this.B_onCreate,
-      B_onTurnStart: this.B_onTurnStart,
-      B_onTurnEnd: this.B_onTurnEnd,
-      B_onAfterDraw: this.B_onAfterDraw,
-      B_onBeforePlay: this.B_onBeforePlay,
-      B_onAfterPlay: this.B_onAfterPlay,
-      B_onBeforeStash: this.B_onBeforeStash,
-      B_onAfterStash: this.B_onAfterStash,
     });
   }
 }
 
-export const createBuff = (payload: {
-  B_id?: number;
-  B_definitionId: string;
-  B_name: BuffSituationFunction<string>;
-  B_description: BuffSituationFunction<string>;
-  B_icon: string;
-  B_isPermanent?: boolean;
-  B_category?: PlayerBuffCategory[];
-  B_valueDict: Record<string, number>;
-  B_maxStacks?: number;
-  B_onTurnStart?: BuffSituationFunction<void>;
-  B_onTurnEnd?: BuffSituationFunction<void>;
-  B_onAfterDraw?: BuffSituationFunction<void>;
-  B_onBeforePlay?: BuffSituationFunction<void>;
-  B_onAfterPlay?: BuffSituationFunction<void>;
-  B_onBeforeStash?: BuffSituationFunction<void>;
-  B_onAfterStash?: BuffSituationFunction<void>;
-}) => new BuffDefinition(payload);
+export const createBuff = (payload: BuffCreatePayLoad) =>
+  new BuffDefinition(payload);
 
 export interface MerchantOffer {
   cost: string;

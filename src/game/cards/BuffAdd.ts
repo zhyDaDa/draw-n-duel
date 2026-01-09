@@ -27,9 +27,10 @@ export const BuffAdd = createCard({
     },
     notes: (state) => {
       const val = state.C_current.C_effect.valueDict.val;
-      return `之后的[基础加法](basic-add)都会额外增加${
-        val.modified ?? val.base
-      }分`;
+      return `
+      之后的[基础加法](basic-add)都会额外增加${val.modified ?? val.base}分
+      可叠加
+      `;
     },
     onCreate: (state) => {
       // 初始化数值
@@ -43,15 +44,19 @@ export const BuffAdd = createCard({
       const def = createBuff({
         B_definitionId: "buffadd_base",
         B_name: () => state.C_current.C_name,
-        B_description: () => `加法都会额外增加${val.modified ?? val.base}分`,
+        B_description: (self) =>
+          `加法都会额外增加${
+            (self.count ?? 1) *
+            (self.B_valueDict.modified ?? self.B_valueDict.base)
+          }分`,
         B_icon: IconAdd,
         B_isPermanent: true,
         B_category: ["buff", "math"],
         B_valueDict: {
-          base: val.modified ?? val.base,
+          base: 1,
         },
+        
         B_onAfterDraw: (self, s) => {
-          console.log("BuffAdd Buff - onAfterDraw, self: ", self);
           const drawnCard = s.C_current;
           if (!drawnCard) return;
           if (drawnCard.definitionId === "basic-add") {
@@ -59,15 +64,15 @@ export const BuffAdd = createCard({
             if (targetValDict?.score) {
               targetValDict.score.modified =
                 (targetValDict.score.modified ?? targetValDict.score.base) +
-                (self.B_valueDict.modified ?? self.B_valueDict.base);
-              console.log(
-                `%c加法增幅器生效! modified = ${targetValDict.score.modified}`,
-                "color: orange;"
-              );
+                (self.count ?? 1) *
+                  (self.B_valueDict.modified ?? self.B_valueDict.base);
             }
           }
         },
+        count: val.modified ?? val.base,
+        canCombine: true,
       });
+      console.log("###def", def);
 
       const buff = def.createInstance(state);
       state.P_state.buffs.push(buff);
