@@ -15,7 +15,7 @@ export const CollectionVictoryShard = createCard({
   C_id: "collection-victory-shard",
   C_name: "胜利碎片",
   C_rarity: "rare" as Rarity,
-  C_baseWeight: 10.5, // 加法的权重是10
+  C_baseWeight: 0.8, // 加法的权重是10
   C_levelRange: DEFAULT_LEVEL_RANGE,
   C_effect: {
     type: "V-shard",

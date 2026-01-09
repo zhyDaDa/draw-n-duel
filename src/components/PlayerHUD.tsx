@@ -1,5 +1,5 @@
 import AnimatedBuffList from "./AnimatedBuffList";
-import { type GameState, type BuffDefinition } from "../game/types";
+import { BuffDefinition, type GameState } from "../game/types";
 import "./PlayerHUD.less";
 
 interface PlayerHUDProps {
@@ -53,15 +53,19 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
 
   // 额外抽卡 Buff (临时)
   if (player.extraDraws > 0) {
-    buffs.push({
-      id: makeBuffId(),
-      name: () => "额外抽卡",
-      description: () => `本回合可额外抽取 ${player.extraDraws} 张卡牌。`,
-      category: ["extraDraw", "temporary"],
-      icon: "/src/assets/svg/加_plus.svg",
-      isPermanent: false,
-      count: player.extraDraws,
-    });
+    buffs.push(
+      new BuffDefinition({
+        // id: makeBuffId(),
+        B_definitionId: "extra-draw-temporary",
+        B_name: () => "额外抽卡",
+        B_description: () => `本回合可额外抽取 ${player.extraDraws} 张卡牌。`,
+        B_category: ["extraDraw", "temporary"],
+        B_icon: "/src/assets/svg/加_plus.svg",
+        B_valueDict: {},
+        B_isPermanent: false,
+        count: player.extraDraws,
+      })
+    );
   }
 
   // 层通行证 Buff
