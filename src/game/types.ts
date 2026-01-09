@@ -10,7 +10,7 @@ export type EffectType =
   | "extraDraw"
   | "transfer"
   | "steal"
-  | "victoryShard"
+  | "V-shard"
   | "levelPass"
   | "shield"
   | "duplicate"
@@ -380,7 +380,7 @@ export interface CardEffect {
   type: EffectType;
   target?: TargetType;
   valueDict: Record<string, EffectValue>;
-  notes?: string | ((state: CardSituationState) => string);
+  notes?: (state: CardSituationState) => string;
   /** onCreate 特殊:直接传递卡牌引用,不通过游戏状态查找 */
   onCreate?: (state: CardCreationState) => void;
   onDisplay?: (state: CardSituationState) => void;
@@ -607,6 +607,7 @@ export type PlayerBuffCategory =
   | "extraDraw"
   | "temporary"
   | "permanent"
+  | "V-shard"
   | "collection"
   | "token"
   | "statusChange";

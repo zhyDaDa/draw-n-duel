@@ -42,9 +42,10 @@ export const BasicExtraDraw = createCard({
     },
     onPlay(state) {
       // 出牌逻辑
-      const val = state.C_current.C_effect.valueDict.val;
-      state.P_state.extraDraws += val.base;
-      state.P_state.score -= state.C_current.C_effect.valueDict.cost.base;
+      const { val, cost } = state.C_current.C_effect.valueDict;
+
+      state.P_state.extraDraws += val.modified ?? val.base;
+      state.P_state.score -= cost.modified ?? cost.base;
     },
   } as CardEffect,
 });

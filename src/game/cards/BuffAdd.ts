@@ -15,7 +15,7 @@ export const BuffAdd = createCard({
   C_id: "buff-add",
   C_name: "加法增幅器·初",
   C_rarity: "uncommon" as Rarity,
-  C_baseWeight: 11.5, // 加法的权重是10
+  C_baseWeight: 1.5, // 加法的权重是10
   C_levelRange: DEFAULT_LEVEL_RANGE,
   C_effect: {
     type: "mathBuff",
@@ -75,7 +75,6 @@ export const BuffAdd = createCard({
         count: val.modified ?? val.base,
         canCombine: true,
       });
-      console.log("###def", def);
 
       const buff = def.createInstance(state);
       addBuffToPlayer(state, state.P_state, buff);
