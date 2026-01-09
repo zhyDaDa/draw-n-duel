@@ -635,6 +635,12 @@ export interface BuffCreatePayLoad {
   B_maxCount?: number;
   B_maxStacks?: number;
   B_onCreate?: BuffSituationFunction<void>;
+  B_onCombine?: (
+    state: BuffSituationState,
+    self: BuffDefinition,
+    target: BuffDefinition
+  ) => void;
+
   B_onTurnStart?: BuffSituationFunction<void>;
   B_onTurnEnd?: BuffSituationFunction<void>;
   B_onAfterDraw?: BuffSituationFunction<void>;
@@ -658,7 +664,11 @@ export class BuffDefinition {
   B_maxCount?: number;
   B_maxStacks?: number;
   B_onCreate?: BuffSituationFunction<void>;
-  B_onCombine?: (state: BuffSituationState, target: BuffDefinition) => void;
+  B_onCombine?: (
+    state: BuffSituationState,
+    self: BuffDefinition,
+    target: BuffDefinition
+  ) => void;
 
   B_onTurnStart?: BuffSituationFunction<void>;
   B_onTurnEnd?: BuffSituationFunction<void>;
@@ -732,6 +742,30 @@ export class BuffDefinition {
 
 export const createBuff = (payload: BuffCreatePayLoad) =>
   new BuffDefinition(payload);
+
+export const addBuffToPlayer = (
+  state: BuffSituationState,
+  player: PlayerState,
+  buff: BuffDefinition
+) => {
+  let flag = true; // 没有同类的标志
+  if (buff.canCombine) {
+    player.buffs = player.buffs.reduce((pre: BuffDefinition[], cur) => {
+      if (cur.B_definitionId != buff.B_definitionId) {
+        return [...pre, cur];
+      }
+      // 如果有同种的buff
+      if (typeof cur.B_onCombine === "function") {
+        cur.B_onCombine(state, cur, buff);
+      } else {
+        cur.count = (cur.count ?? 1) + (buff.count ?? 1);
+      }
+      flag = false;
+      return [...pre, cur];
+    }, [] as BuffDefinition[]);
+  }
+  if (flag) player.buffs.push(buff);
+};
 
 export interface MerchantOffer {
   cost: string;

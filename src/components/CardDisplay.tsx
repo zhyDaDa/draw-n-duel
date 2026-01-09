@@ -13,9 +13,7 @@ interface CardDisplayProps {
   className?: string;
 }
 
-export const describeCardEffect = (
-  state: CardSituationState
-): string => {
+export const describeCardEffect = (state: CardSituationState): string => {
   const effect = state.C_current.C_effect;
   if (typeof effect.notes === "string") return effect.notes;
   else if (typeof effect.notes === "function") {
@@ -24,11 +22,6 @@ export const describeCardEffect = (
 };
 
 export const toneLabel: Record<CardTone, string> = {
-  1: "普通",
-  2: "罕见",
-  3: "稀有",
-  4: "传说",
-  5: "究极",
   common: "普通",
   uncommon: "罕见",
   rare: "稀有",

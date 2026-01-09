@@ -5,6 +5,7 @@ import {
   type CardEffect,
   type Rarity,
   type TargetType,
+  addBuffToPlayer,
 } from "../types";
 import { DEFAULT_LEVEL_RANGE } from "../constants";
 import IconAdd from "../../assets/svg/加_plus.svg";
@@ -55,7 +56,9 @@ export const BuffAdd = createCard({
         B_valueDict: {
           base: 1,
         },
-        
+        B_onCombine: (_, self, target) => {
+          self.count = (self.count ?? 1) + (target.count ?? 1);
+        },
         B_onAfterDraw: (self, s) => {
           const drawnCard = s.C_current;
           if (!drawnCard) return;
@@ -75,7 +78,7 @@ export const BuffAdd = createCard({
       console.log("###def", def);
 
       const buff = def.createInstance(state);
-      state.P_state.buffs.push(buff);
+      addBuffToPlayer(state, state.P_state, buff);
     },
   } as CardEffect,
 });
